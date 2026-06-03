@@ -1,9 +1,9 @@
 //*********************************************************************************************
 /*                        ( Solver for moment equation      )                                    */
 /*                                                                                            */
-/*  compile with:                                                                             */
+/*  build with 'make' (see Makefile at repo root), or directly:                               */
 /*                                                                                            */
-/*  gcc Main.c Input.c Boundary.c Flux.c database_range.c tools.c -lm -O3                  */
+/*  gcc src/*.c -lm -O3 -o build/moments                                                      */
 /*                                                                                            */
 /* (c) Manuel Torrilhon, ETH Zurich, 2010 - RWTH Aachen 2026                                 */
 //*********************************************************************************************
@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <math.h>
+#include <sys/stat.h>   // mkdir for -out directory
 #include "database_range.h"
 #include "defs.h"
 #include "tools.h"
@@ -30,7 +31,20 @@ void Output( DB_Block *B, int bMax, int n, double t, int Add );
 
 
 char StartFile[200] = "";
+char OutDir[200]    = "";    // output directory (set via -out), "" = current dir
 
+
+//*********************************************************************************************
+// recursively create directory 'path' (like 'mkdir -p'); existing dirs are fine
+//*********************************************************************************************
+void MakeDirs( const char *path )
+{
+  char buf[200]; int i;
+  snprintf( buf, sizeof buf, "%s", path );
+  for( i=1; buf[i]; i++ )
+    if( buf[i]=='/' ) { buf[i]='\0'; mkdir(buf,0755); buf[i]='/'; };
+  mkdir( buf, 0755 );
+};
 
 
 //*********************************************************************************************
@@ -62,6 +76,11 @@ int main(int argc, const char **argv)
 
   if (exists_argument(argc, argv, "-bfile"))
       get_string_argument(argc, argv, "-bfile",BlockFile);
+
+  if (exists_argument(argc, argv, "-out")) {
+      get_string_argument(argc, argv, "-out",OutDir);
+      MakeDirs( OutDir );  // create output dir (and parents) if missing
+  };
 
   printf( "\n Hello, R13 = %f, Kn = %.3f, CFL = %.2f, BlockFile = \"%s\" \n\n", 
           R13, Kn, CFLreg, BlockFile );
@@ -469,12 +488,17 @@ char *Convert( double a, char *s )
 //*********************************************************************************************
 void Output( DB_Block *B, int bMax, int n, double t, int Add )
 {
+  extern char OutDir[200];   // output directory set via -out ("" = current dir)
   int i, j, k = 1, nb, dst_idx, m, PosCnt, anzMBC = 1, lineOut;
   double U[N], Prim[N], p, tmp, rho;
-  char s1[20], s2[20], s3[20], s4[20], solv[1024];
+  char s1[20], s2[20], s3[20], s4[20], solv[1024], prefix[224];
   char *name = NULL;
   Vector P;
   FILE *fp;
+
+  // prepend output directory (with trailing slash) if -out was given
+  if( strlen(OutDir) > 0 ) snprintf( prefix, sizeof prefix, "%s/", OutDir );
+  else prefix[0] = '\0';
 
   if( R13 < 1.0 )
     snprintf( solv, sizeof solv, "%s%s", "Grad13", Type );
@@ -484,16 +508,20 @@ void Output( DB_Block *B, int bMax, int n, double t, int Add )
   if( !Add ) Convert(t,s2);
   else snprintf( s2, sizeof s2, "All" );
 
-  if( asprintf(&name, "%s_nst%d_Kn%s_t%s.dat", solv,
+  if( asprintf(&name, "%s%s_nst%d_Kn%s_t%s.dat", prefix, solv,
     FullGridSize( B, bMax ), Convert(Kn,s1), s2 ) == -1 ) name = NULL;
   
   if( Add <= 0 ) {
     Add = 0;
     fp = fopen( name, "w" );
+    if( fp == NULL ) { perror( name ); if(name) free(name); return; }
     fprintf( fp, "TITLE = \"13 Moment Equations in 2D\"\n" ); 
     fprintf( fp, "VARIABLES = \"x\",\"y\",\"rho\",\"vx\",\"vy\",\"T\",\"p\","); 
     fprintf( fp, "\"Pxx\",\"Pxy\",\"Pyy\",\"qx\",\"qy\"\n"); 
-  } else fp = fopen( name, "a+" );
+  } else {
+    fp = fopen( name, "a+" );
+    if( fp == NULL ) { perror( name ); if(name) free(name); return; }
+  };
   
   if( Add == 0 ) printf( "\n  Create File: %s...", name );fflush(stdout);
   if( Add > 0 ) printf( "\n  Append (%d) File: %s...", Add, name );fflush(stdout);

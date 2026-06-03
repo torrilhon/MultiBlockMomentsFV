@@ -1,0 +1,15 @@
+# build artifacts
+build/
+
+# simulation output
+runs/
+
+# editor / OS cruft
+*.o
+*.out
+a.out
+*~
+.DS_Store
+
+# stray output if binary is run from repo root without -out
+/*.dat

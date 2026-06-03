@@ -95,9 +95,6 @@ void Grad13Flux1D( double *U, double *F )
   q1 = U[7]-E*v1-rho*(T11*v1+T12*v2);
   q2 = U[8]-E*v2-rho*(T12*v1+T22*v2);
 
-  q1+E*v1+rho*(T11*v1+T12*v2);
-  q2+E*v2+rho*(T12*v1+T22*v2);
-
   /**** Grad13 closure: ******/
   M111 = 1.2*q1/rho;
   M121 = M112 = 0.4*q2/rho;

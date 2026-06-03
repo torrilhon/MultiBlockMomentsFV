@@ -154,6 +154,11 @@ int SetBlocks( double *times, DB_Block *B, char *filename )
   while( fscanf( fp, "%d/%lf,%lf/%lf,%lf/%d,%d/%d,%d,%d,%d/%*[^\n]",
 		     &(block_nr), &(xmin), &(xmax), &(ymin), &(ymax), &(nx), &(ny),
          &(bound0), &(bound1), &(bound2), &(bound3) ) != EOF ) {
+    if( block_nr < 1 || block_nr > NB ) {
+      fprintf( stderr, "   ERROR: block number %d out of range [1,%d=NB]. "
+               "Increase NB in defs.h or fix the block file.\n", block_nr, NB );
+      fclose(fp); return( 0 );
+    };
     printf( "    Block %d, x-range: (%+7.2lf,%+7.2lf), y-range: (%+7.2lf,%+7.2lf), grid %dx%d\n",
 		     (block_nr), (xmin), (xmax), (ymin), (ymax), (nx), (ny) );
          
@@ -214,7 +219,6 @@ void LoadData( DB_Block *B, int bMax, char *filename )
                 &x, &y, &rho, &vx, &vy, &p, &theta, &Pxx, &Pxy, &Pyy, &qx, &qy ) != 12 ) {
           fclose(fp); fprintf(stderr,"Unexpected data format in %s\n", filename); return; }
         if( fgets(tmp,100,fp) == NULL ) { fclose(fp); fprintf(stderr,"Unexpected EOF after data line\n"); return; }
-        printf( "%f %f %f \n", x, y, vx );
 
         Prim[0] = rho;
         Prim[1] = vx;
