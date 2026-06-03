@@ -17,8 +17,8 @@ MultiBlockMomentsFV/
 │   ├── square4.txt        4-block square domain (standard test, t_end=0.3)
 │   ├── squareSmall.txt    coarse version of square4 (quick smoke test)
 │   └── Lshape.txt         3-block L-shaped domain (t_end=0.6)
-├── reference/        golden results for validation (see note below)
-├── tools/            post-processing (plot_solution.jl)
+├── reference/        golden results for `make check`
+├── tools/            plot_solution.jl (plotting), compare_solution.py (regression check)
 ├── build/            compiled objects + binary  (git-ignored)
 └── runs/             simulation output           (git-ignored)
 ```
@@ -107,15 +107,25 @@ julia tools/plot_solution.jl runs/squareSmall/Grad13Riemann2D_*_tAll.dat
 ## Validation
 
 ```sh
-make check CASE=cases/squareSmall.txt
+make check                                   # default: square4 (full reference run)
+make check CHECKCASE=cases/squareSmall.txt   # quick smoke check
 ```
 
-This runs the case and diffs its output against `reference/<case>.ref.dat`.
+`make check` runs the case and compares its Tecplot output against
+`reference/<case>.ref.dat` numerically via `tools/compare_solution.py`. The
+comparison ignores physically meaningless differences (signed zeros,
+whitespace, Tecplot `STRANDID` metadata) and **fails** (non-zero exit) on any
+value that exceeds the tolerance, so it works as a real regression gate.
 
-> **Note:** the reference data currently stored in `reference/` is known to be
-> corrupted and needs to be regenerated. Until then `make check` reports the
-> diff but does not fail the build. Once a correct golden file is in place,
-> remove the `|| true` fallback in the Makefile to make `check` a hard gate.
+Tolerances default to `ABSTOL=1e-10`, `RELTOL=1e-8` and can be overridden:
+
+```sh
+make check ABSTOL=1e-8 RELTOL=1e-6
+```
+
+To refresh a golden file after an intentional change, regenerate it with
+`make run CASE=cases/<case>.txt` and copy the resulting `*_tAll.dat` to
+`reference/<case>.ref.dat`.
 
 ## Reference
 

@@ -24,8 +24,14 @@ SRC     := $(wildcard $(SRCDIR)/*.c)
 OBJ     := $(patsubst $(SRCDIR)/%.c,$(BUILD)/%.o,$(SRC))
 BIN     := $(BUILD)/moments
 
-# default case for `make run` / `make check`
+# default case for `make run`
 CASE    ?= cases/squareSmall.txt
+# default case for `make check` (square4 = full standard reference run)
+CHECKCASE ?= cases/square4.txt
+CHECKNAME  = $(basename $(notdir $(CHECKCASE)))
+# tolerances for the numeric regression comparison
+ABSTOL  ?= 1e-10
+RELTOL  ?= 1e-8
 # strip directory + .txt extension -> name of the run/output subfolder
 CASENAME = $(basename $(notdir $(CASE)))
 
@@ -52,26 +58,24 @@ run: $(BIN)
 	./$(BIN) -bfile $(CASE) -out $(RUNS)/$(CASENAME) $(ARGS)
 
 # --------------------------------------------------------------------------
-# check: run the small case and diff its Tecplot output against reference/.
+# check: run CHECKCASE and compare its Tecplot output against reference/
+# numerically (tools/compare_solution.py). The comparison ignores physically
+# meaningless differences (signed zeros, whitespace, Tecplot STRANDID) and
+# fails on any value that exceeds the tolerance. This is a hard pass/fail gate.
 #
-# NOTE: the reference data currently stored in reference/ is known to be
-#       corrupted and must be regenerated before this check is meaningful.
-#       The target therefore runs the case and reports the diff, but does
-#       NOT fail the build on mismatch (|| true). Once a correct golden file
-#       is in place, drop the "|| true" to make it a hard pass/fail gate.
+#   make check                          # default: square4
+#   make check CHECKCASE=cases/squareSmall.txt   # quick smoke check
+#   make check ABSTOL=1e-8 RELTOL=1e-6           # loosen tolerances
 check: $(BIN)
-	@echo "== regression check on $(CASE) =="
-	@mkdir -p $(RUNS)/$(CASENAME)
-	./$(BIN) -bfile $(CASE) -out $(RUNS)/$(CASENAME)
-	@echo "-- diff vs $(REF)/$(CASENAME).ref.dat --"
-	@if [ -f $(REF)/$(CASENAME).ref.dat ]; then \
-	   diff -q $(RUNS)/$(CASENAME)/*_tAll.dat $(REF)/$(CASENAME).ref.dat \
-	     && echo "PASS: output matches reference" \
-	     || echo "MISMATCH (expected for now: reference data is corrupted, regenerate it)"; \
-	 else \
-	   echo "SKIP: no reference file $(REF)/$(CASENAME).ref.dat"; \
+	@echo "== regression check on $(CHECKCASE) =="
+	@if [ ! -f $(REF)/$(CHECKNAME).ref.dat ]; then \
+	   echo "SKIP: no reference file $(REF)/$(CHECKNAME).ref.dat"; exit 0; \
 	 fi
-	@true
+	@mkdir -p $(RUNS)/$(CHECKNAME)
+	./$(BIN) -bfile $(CHECKCASE) -out $(RUNS)/$(CHECKNAME)
+	@echo "-- compare vs $(REF)/$(CHECKNAME).ref.dat --"
+	python3 tools/compare_solution.py \
+	   $(RUNS)/$(CHECKNAME)/*_tAll.dat $(REF)/$(CHECKNAME).ref.dat $(ABSTOL) $(RELTOL)
 
 # --------------------------------------------------------------------------
 clean:
@@ -80,4 +84,5 @@ clean:
 
 help:
 	@echo "targets: all (default), run, check, clean"
-	@echo "vars:    CASE=cases/<file>.txt   ARGS=\"-Kn 0.01 -CFL 0.9\""
+	@echo "vars:    CASE=cases/<file>.txt        ARGS=\"-Kn 0.01 -CFL 0.9\""
+	@echo "         CHECKCASE=cases/<file>.txt   ABSTOL=1e-10 RELTOL=1e-8"
