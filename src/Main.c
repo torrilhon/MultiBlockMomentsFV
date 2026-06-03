@@ -3,9 +3,9 @@
 /*                                                                                            */
 /*  compile with:                                                                             */
 /*                                                                                            */
-/*  gcc Main.c Input.c Boundary.c Flux.c database_range.c tools.c -lm -O4                  */
+/*  gcc Main.c Input.c Boundary.c Flux.c database_range.c tools.c -lm -O3                  */
 /*                                                                                            */
-/* (c) Manuel Torrilhon, ETH Zurich, 2010                                                     */
+/* (c) Manuel Torrilhon, ETH Zurich, 2010 - RWTH Aachen 2026                                 */
 //*********************************************************************************************
 
 #include <stdio.h>
@@ -115,10 +115,12 @@ int main(int argc, const char **argv)
 
   printf( "\n Done after %d steps.\n\n", nMax  );
 
-  free(B[0].Data);
-  free(B[0].New);
-  free(B[0].Aux);
-  free(B[0].Tmp);
+  for( nb=0; nb<bMax; nb++ ) {
+    free(B[nb].Data);
+    free(B[nb].New);
+    free(B[nb].Aux);
+    free(B[nb].Tmp);
+  };
 
   return(0);
 }
@@ -237,14 +239,14 @@ double TimeUpdate( DB_Block *B, int bMax, double dt, double t )
 
   /****** two-dimensional second order Heun ****/
   for( nb=0; nb<bMax; nb++ ) 
-    CFL1 = Update( B[nb].Tmp, B[nb].Data, B[nb].Aux, B[nb], B[nb].Data, dt, t, 0 ); 
+    CFL1 = max( CFL1, Update( B[nb].Tmp, B[nb].Data, B[nb].Aux, B[nb], B[nb].Data, dt, t, 0 ) );
   SetBoundary( B, bMax, t+dt );
   
   for( nb=0; nb<bMax; nb++ ) 
-    Update( B[nb].New, B[nb].Tmp, B[nb].Aux, B[nb], B[nb].Data, dt, t+dt, 1 ); 
+    CFL2 = max( CFL2, Update( B[nb].New, B[nb].Tmp, B[nb].Aux, B[nb], B[nb].Data, dt, t+dt, 1 ) );
   SetBoundary( B, bMax, t+dt );
   
-  CFLmax = max(CFL1,CFLmax);
+  CFLmax = max(CFL1, max(CFL2, CFLmax));
   return( CFLmax );
 };
 
@@ -256,6 +258,8 @@ double TimeUpdate( DB_Block *B, int bMax, double dt, double t )
 // Data0 = NULL : only the residuum is computed from Data and stored in New
 // Data0 != NULL : the residuum + Data0 is stored in New
 // the Heun flag is used for efficient implementation of Heun's method
+// Returns the combined CFL number: dt*lambda_x/dx + dt*lambda_y/dy + CFL_prod
+// where CFL_prod = (1 - R(2/3*nu*dt)) / 2 is the relaxation contribution (paper eq.89).
 //*********************************************************************************************
 double Update( CVector *New, CVector *Data, AuxData *Aux, 
 	       DB_Block B, CVector *Data0, double dt, double t, int HeunFlag )
@@ -274,7 +278,8 @@ double Update( CVector *New, CVector *Data, AuxData *Aux,
       idx = (j - R.lfb.j)*line + (i - R.lfb.i);
       ProductionsDirect( Data[idx].U, U0, dt, Get_Point(i,j,k,B), t, 2*HeunFlag+1 );
       Primitiv( U0, Aux[idx].Prim ); //initial layer projection
-      ProductionsDirect( Data[idx].U, New[idx].U, dt, Get_Point(i,j,k,B), t, 2*HeunFlag );
+      CFL_prod = max( CFL_prod,
+                      ProductionsDirect( Data[idx].U, New[idx].U, dt, Get_Point(i,j,k,B), t, 2*HeunFlag ) );
       if( HeunFlag==1 ) {      // 2nd part Heun-method                
         ProductionsDirect( Data0[idx].U, U0, dt, Get_Point(i,j,k,B), t, -1 );
         for( n=0; n<N; n++ ) 

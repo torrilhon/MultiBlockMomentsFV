@@ -198,7 +198,21 @@ double G_Flux( double *Prim, double *dPrimX, double *dPrimY, double *G )
 };
 
 //*********************************************************************************************
-// computes damping factors for direct integration of productions terms
+// Relaxation damping factor R(z) for direct integration of production terms, z = nu*dt > 0.
+//
+// The paper (Torrilhon_MMS, eq.71) proposes R(z) = 1/(1-z+z^2), which satisfies the
+// second-order conditions (eqs.69-70) but goes negative for 0.5 < z < 2.
+// The formulas used here are positive-definite rational approximations that also satisfy
+// the order conditions to second order (R(z) = 1 - z + z^2 + O(z^3)) while remaining
+// strictly positive for all z >= 0. The flag selects the stage of the Heun integration:
+//
+//   flag =  0 : stage-1 relaxation,   R(z) = (1+0.5z-0.25z^2)/(1+z+0.25z^2)
+//   flag =  1 : stage-1 half-step,    R(z) = (1+z)/(1+z+0.25z^2)
+//   flag =  2 : identity (R = 1),     used for Aux initialisation only
+//   flag =  3 : first-order implicit, R(z) = 1/(1+0.5z)
+//   flag = -1 : stage-2 correction,   same formula as flag=0
+//
+// The CFL contribution from the relaxation is (1 - R(2/3*z)) / 2  (paper eq.89).
 //*********************************************************************************************
 static inline double Rdamp( double z, int flag )
 {
@@ -213,7 +227,9 @@ static inline double Rdamp( double z, int flag )
 };
 
 //*********************************************************************************************
-// computes a relaxation step of the R13-productions from 'U' onto 'New'
+// computes a relaxation step of the R13-productions from 'U' onto 'New'.
+// Returns the production CFL contribution (1 - R(2/3*nu*dt)) / 2  (paper eq.89),
+// which must be accumulated into CFL_prod in Update().
 //*********************************************************************************************
 double ProductionsDirect( double *U, double *New, double dt, Vector X, double t, int flag )
 {
@@ -250,6 +266,7 @@ double ProductionsDirect( double *U, double *New, double dt, Vector X, double t,
   New[7] = q1+E*v1+rho*(T11*v1+T12*v2);
   New[8] = q2+E*v2+rho*(T12*v1+T22*v2);
 
+  // production CFL contribution: (1 - R(2/3*nu*dt)) / 2  (paper eq.89)
   return( 0.5*(1-dampfac2) );
 };
 
@@ -377,4 +394,3 @@ double yFlux( double dtdy, double dy, double *primL, double *dPrimLX, double *dP
   
   return( cMax );
 };
-
