@@ -5,8 +5,7 @@ of rarefied gas dynamics on Cartesian multi-block meshes.
 
 The scheme is a second-order MUSCL reconstruction with an HLL-type numerical flux,
 SSP-RK2 (Heun) time stepping, and a direct (relaxation) integration of the stiff
-production terms. The numerical method is described in the accompanying paper
-(`literature/Torrilhon_MMS.pdf`).
+production terms. The numerical method is described in the reference below.
 
 ## Repository layout
 
@@ -20,7 +19,6 @@ MultiBlockMomentsFV/
 │   └── Lshape.txt         3-block L-shaped domain (t_end=0.6)
 ├── reference/        golden results for validation (see note below)
 ├── tools/            post-processing (plot_solution.jl)
-├── literature/       Torrilhon_MMS.pdf (method description)
 ├── build/            compiled objects + binary  (git-ignored)
 └── runs/             simulation output           (git-ignored)
 ```
@@ -118,6 +116,14 @@ This runs the case and diffs its output against `reference/<case>.ref.dat`.
 > corrupted and needs to be regenerated. Until then `make check` reports the
 > diff but does not fail the build. Once a correct golden file is in place,
 > remove the `|| true` fallback in the Makefile to make `check` a hard gate.
+
+## Reference
+
+The numerical method implemented in this code is described in:
+
+> M. Torrilhon, "Two-Dimensional Bulk Microflow Simulations Based on Regularized
+> Grad's 13-Moment Equations," *Multiscale Modeling & Simulation*, Vol. 5, No. 3,
+> pp. 695–728, 2006. DOI: [10.1137/050635444](https://doi.org/10.1137/050635444)
 
 ---
 (c) Manuel Torrilhon, ETH Zurich 2010 – RWTH Aachen 2026
