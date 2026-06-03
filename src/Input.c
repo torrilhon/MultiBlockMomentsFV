@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>   // strcasecmp / strncasecmp for the key=value parser
 #include <math.h>
 #include "database_range.h"
 #include "defs.h"
@@ -23,6 +24,35 @@ extern char StartFile[200];
 double Kn = 0.001;    // Knudsen number
 double F = 0.0;       // volume-force in x-direction
 double R13 = 0.0;     // R13 switch
+double CFLreg = 0.95; // regulated CFL number (target)
+extern int Limiter;   // slope-limiter selection (defined in Main.c)
+
+
+//*********************************************************************************************
+// map a limiter name (as used in the block file / -limiter flag) to its code,
+// and back. Unknown names fall back to the harmonic-mean default.
+//*********************************************************************************************
+int LimiterCode( const char *name )
+{
+  if( strcmp(name,"none")     == 0 ) return( LIM_NONE );
+  if( strcmp(name,"average")  == 0 ) return( LIM_AVERAGE );
+  if( strcmp(name,"minmod")   == 0 ) return( LIM_MINMOD );
+  if( strcmp(name,"superbee") == 0 ) return( LIM_SUPERBEE );
+  if( strcmp(name,"harmonic") == 0 ) return( LIM_HARMONIC );
+  fprintf( stderr, "   WARNING: unknown limiter '%s', using 'harmonic'.\n", name );
+  return( LIM_HARMONIC );
+}
+
+const char *LimiterName( int code )
+{
+  switch( code ) {
+    case LIM_NONE:     return( "none" );
+    case LIM_AVERAGE:  return( "average" );
+    case LIM_MINMOD:   return( "minmod" );
+    case LIM_SUPERBEE: return( "superbee" );
+    default:           return( "harmonic" );
+  };
+}
 
 
 // collision frequency
@@ -121,35 +151,70 @@ void SetInitial( double *U, Vector P )
 //*********************************************************************************************
 int SetBlocks( double *times, DB_Block *B, char *filename )
 {
-  double xmin, xmax, ymin, ymax, dt, tend;
+  double xmin, xmax, ymin, ymax, dt = 0.0, tend = 0.0;
   int i, n = 0, bMax=0, block_nr, nx, ny, nst = 2*MBC, bound0, bound1, bound2, bound3;
-  char tmp[300], *tmp1;
+  char tmp[300], key[64], val[200], *p;
+  int n_times = 0;          // number of explicit output times read (via 'times')
   FILE *fp;
   DB_Range R1;
-  
+
   fp = fopen( filename, "r");
   if( fp == NULL ) { perror(filename); return 0; }
 
-  if( fgets(tmp,300,fp) == NULL ) { fclose(fp); fprintf(stderr,"Unexpected EOF reading times header\n"); return 0; }
-  if( fgets(tmp,300,fp) == NULL ) { fclose(fp); fprintf(stderr,"Unexpected EOF reading times header\n"); return 0; }
-  
-  tmp1 = tmp;
-  do times[n++] = strtod(tmp1,&tmp1); while( times[n-1] != 0 );
-  if( times[0] > 0.0 ) {
-    printf( "   Output times will be: t = " );
-    for( i=0; i<n-1; i++ ) printf( "%f, ", times[i] );
+  // ----- global header: 'key = value' lines until the 'Block data' marker -----
+  // Recognized keys (all optional; missing keys keep their built-in defaults;
+  // a CLI flag given to the solver overrides the corresponding file value):
+  //   Kn, R13, F, CFL          -- physics / numerics scalars
+  //   limiter                  -- none | average | minmod | superbee | harmonic
+  //   tend, dt                 -- fixed-cadence output (every dt until tend)
+  //   times = t1 t2 ...        -- explicit, increasing list of output times
+  printf( "\n   Reading parameters...\n" );
+  while( fgets(tmp,300,fp) != NULL ) {
+    p = tmp;
+    while( *p==' ' || *p=='\t' ) p++;            // skip leading blanks
+    if( *p=='\0' || *p=='\n' || *p=='#' ) continue;            // blank / comment
+    if( p[0]=='/' && p[1]=='/' ) continue;                     // // comment
+    if( strncasecmp(p,"Block data",10) == 0 ) break;           // end of header
+
+    if( sscanf(p," %63[^= \t] = %199[^\n]", key, val ) != 2 ) continue;
+    // strip a trailing inline comment from the value
+    if( (p = strchr(val,'#')) ) *p = '\0';
+
+    if(      strcasecmp(key,"Kn")  == 0 ) Kn     = atof(val);
+    else if( strcasecmp(key,"R13") == 0 ) R13    = atof(val);
+    else if( strcasecmp(key,"F")   == 0 ) F      = atof(val);
+    else if( strcasecmp(key,"CFL") == 0 ) CFLreg = atof(val);
+    else if( strcasecmp(key,"tend")== 0 ) tend   = atof(val);
+    else if( strcasecmp(key,"dt")  == 0 ) dt     = atof(val);
+    else if( strcasecmp(key,"limiter") == 0 ) {
+      char name[64]; sscanf(val," %63s",name); Limiter = LimiterCode(name);
+    }
+    else if( strcasecmp(key,"times") == 0 ) {
+      char *q = val;
+      n_times = 0;
+      do times[n_times++] = strtod(q,&q); while( times[n_times-1] != 0.0 );
+      n_times--;  // drop the trailing 0 terminator from the count
+    }
+    else fprintf( stderr, "   WARNING: unknown parameter '%s' ignored.\n", key );
+  };
+
+  // build the output-time list: explicit 'times' wins, else 'dt'+'tend' cadence
+  if( n_times > 0 ) {
+    times[n_times] = 0.0;   // times[] already filled while parsing the 'times' key
+    printf( "   Output times: t = " );
+    for( i=0; i<n_times; i++ ) printf( "%g%s", times[i], i<n_times-1?", ":"\n" );
   } else {
-    dt = -times[0];
-    tend = times[1];
     n = (int)((tend+1e-10)/dt);
     for( i=0; i<n; i++ ) times[i] = (i+1)*dt;
     times[n] = 0.0;
-    printf( "   %d Output times will be every %f until t_end = %f", n, dt, tend );
+    printf( "   Output every dt = %g until t_end = %g (%d outputs)\n", dt, tend, n );
   };
-    
+  printf( "   Kn = %.4g, R13 = %g, F = %g, CFL = %.2f, limiter = %s\n",
+          Kn, R13, F, CFLreg, LimiterName(Limiter) );
+
+  // ----- per-block table (unchanged positional format) -----
   if( fgets(tmp,300,fp) == NULL ) { fclose(fp); fprintf(stderr,"Unexpected EOF before block definitions\n"); return 0; }
-  if( fgets(tmp,300,fp) == NULL ) { fclose(fp); fprintf(stderr,"Unexpected EOF before block definitions\n"); return 0; }
-  printf( "\n\n   Reading block definitions... \n" );
+  printf( "\n   Reading block definitions...\n" );
   
   while( fscanf( fp, "%d/%lf,%lf/%lf,%lf/%d,%d/%d,%d,%d,%d/%*[^\n]",
 		     &(block_nr), &(xmin), &(xmax), &(ymin), &(ymax), &(nx), &(ny),

@@ -55,22 +55,14 @@ void MakeDirs( const char *path )
 int main(int argc, const char **argv)
 {   
   int i, j, k = 1, m, n, nb, bMax, nMax, dst_idx, nstx = 0, nsty = 0;
-  double CFL, CFLmax, CFLreg = 0.95, t, tend, dt, err = 0.0;
+  double CFL, CFLmax, t, tend, dt, err = 0.0;
   double err1 = 0.0, err2 = 0.0, err3 = 0.0;
   double U[N], OutTime[20];
-  char BlockFile[200] = "blockfile.txt";
+  char BlockFile[200] = "blockfile.txt", limname[64];
   DB_Block B[NB];
   DB_Range R;
-  
-  if (exists_argument(argc, argv, "-CFL"))
-      CFLreg = (double)get_float_argument(argc, argv, "-CFL");
 
-  if (exists_argument(argc, argv, "-Kn"))
-      Kn = (double)get_float_argument(argc, argv, "-Kn");
-
-  if (exists_argument(argc, argv, "-R13"))
-      R13 = (double)get_float_argument(argc, argv, "-R13");
-
+  // file/output flags are needed before reading the block file
   if (exists_argument(argc, argv, "-sfile"))
       get_string_argument(argc, argv, "-sfile",StartFile);
 
@@ -82,10 +74,23 @@ int main(int argc, const char **argv)
       MakeDirs( OutDir );  // create output dir (and parents) if missing
   };
 
-  printf( "\n Hello, R13 = %f, Kn = %.3f, CFL = %.2f, BlockFile = \"%s\" \n\n", 
-          R13, Kn, CFLreg, BlockFile );
-
+  // read parameters + grid from the block file (sets Kn, R13, F, CFLreg, Limiter)
   bMax = SetBlocks( OutTime, B, BlockFile );
+
+  // command-line flags override the values read from the block file
+  if (exists_argument(argc, argv, "-CFL"))
+      CFLreg = (double)get_float_argument(argc, argv, "-CFL");
+  if (exists_argument(argc, argv, "-Kn"))
+      Kn = (double)get_float_argument(argc, argv, "-Kn");
+  if (exists_argument(argc, argv, "-R13"))
+      R13 = (double)get_float_argument(argc, argv, "-R13");
+  if (exists_argument(argc, argv, "-limiter")) {
+      get_string_argument(argc, argv, "-limiter", limname);
+      Limiter = LimiterCode(limname);
+  };
+
+  printf( "\n Running: Kn = %.4g, R13 = %g, CFL = %.2f, limiter = %s, BlockFile = \"%s\"\n",
+          Kn, R13, CFLreg, LimiterName(Limiter), BlockFile );
   
   printf( "   Initialize: " );
   for( nb=0; nb<bMax; nb++ ) {
@@ -197,7 +202,9 @@ int Steps( DB_Block *B, int bMax, double *t, double tend, double CFLmax, double 
 
     if(!(anz%anzShow)) {
       if( dt > 0 ) {
-        diff = LinfDifference( B[0] )/dt;
+        diff = 0.0;
+        for( nb=0; nb<bMax; nb++ ) diff = max( diff, LinfDifference( B[nb] ) );
+        diff /= dt;
         perfidx = (1.0*GetmSec())/(1.0e-3*gridsize*(anz+anzRej));
         minutes = (int)(1.0e-6*perfidx*gridsize*(tend-(*t))/(60*dt));
         seconds = (int)(1.0e-6*perfidx*gridsize*(tend-(*t))/dt)%60;
@@ -235,13 +242,29 @@ inline static double superbee( double theta )
 
 static double eps = 1.0e-10;
 
-double Limit1( double d1, double d2 ) 
+// limiter selection (set from the block file key 'limiter' or the -limiter flag;
+// see Limiter codes / names in Input.c). Default: harmonic mean.
+int Limiter = LIM_HARMONIC;
+
+// slope limiter applied to the pair of one-sided differences (d1,d2).
+// The variant is chosen at runtime via the global 'Limiter'.
+double Limit1( double d1, double d2 )
 {
-  //return( 0.5*(d2+d1) ); 
-  double w1 = fabs(d1)+eps, w2 = fabs(d2)+eps; return( (w1*d2+w2*d1)/(w1+w2) );
-  //return( minmod(d1,d2) );
-  //return( d1*superbee(d2/d1) );
-  //return( 0.0 );
+  double w1, w2;
+  switch( Limiter ) {
+    case LIM_NONE:      // first order (no reconstruction)
+      return( 0.0 );
+    case LIM_AVERAGE:   // unlimited central average (second order, oscillatory)
+      return( 0.5*(d1+d2) );
+    case LIM_MINMOD:    // minmod (most diffusive TVD limiter)
+      return( minmod(d1,d2) );
+    case LIM_SUPERBEE:  // superbee (least diffusive TVD limiter)
+      return( d1*superbee(d2/d1) );
+    case LIM_HARMONIC:  // harmonic mean (van-Leer-type, smooth)
+    default:
+      w1 = fabs(d1)+eps; w2 = fabs(d2)+eps;
+      return( (w1*d2+w2*d1)/(w1+w2) );
+  };
 }
 //********************** end (limiter functions) *****************************************
 

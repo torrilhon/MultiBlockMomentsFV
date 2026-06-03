@@ -1,5 +1,14 @@
-Output times, maximal 20 times, increasing or dt (negative) and tend:
--0.05  0.3
+# squareSmall -- coarse 4-block square domain (quick smoke test)
+# Global parameters (all optional; a CLI flag overrides the file value).
+#   limiter: none | average | minmod | superbee | harmonic
+Kn      = 0.001
+R13     = 0
+CFL     = 0.95
+limiter = harmonic
+dt      = 0.05      # fixed output cadence ...
+tend    = 0.3       # ... until this end time
+                    # (alternatively: 'times = 0.1 0.2 0.3' for an explicit list)
+
 Block data (Maximal NB blocks!):
 number/xmin,xmax/ymin,ymax/nstx,nsty/leftbound,rightbound,bottombound,topbound/
 1/-1.0,0.5/-1.0,0.2/15,12/0,2,-1,4/

@@ -59,32 +59,50 @@ Or run the binary directly:
 
 ### Command-line flags
 
-| Flag           | Meaning                                              | Default |
-|----------------|------------------------------------------------------|---------|
-| `-bfile <file>`| block/input file defining grid + output times        | `blockfile.txt` |
-| `-out <dir>`   | directory for output files (created if missing)      | current dir |
-| `-Kn <value>`  | Knudsen number                                       | `0.001` |
-| `-R13 <value>` | regularization switch: `<1` = Grad13, `>=1` = Reg13  | `0.0`   |
-| `-CFL <value>` | target CFL number for adaptive time stepping         | `0.95`  |
-| `-sfile <file>`| restart: load initial state from a previous output   | (none)  |
+The physics/numerics parameters can also be set inside the block file (see
+below). A command-line flag **overrides** the value read from the file, so the
+file is the reproducible record while flags are handy for sweeps.
+
+| Flag             | Meaning                                              | Default |
+|------------------|------------------------------------------------------|---------|
+| `-bfile <file>`  | block/input file defining parameters + grid          | `blockfile.txt` |
+| `-out <dir>`     | directory for output files (created if missing)      | current dir |
+| `-Kn <value>`    | Knudsen number                                       | `0.001` |
+| `-R13 <value>`   | regularization switch: `<1` = Grad13, `>=1` = Reg13  | `0.0`   |
+| `-CFL <value>`   | target CFL number for adaptive time stepping         | `0.95`  |
+| `-limiter <name>`| slope limiter (see below)                            | `harmonic` |
+| `-sfile <file>`  | restart: load initial state from a previous output   | (none)  |
 
 ## Block file format
 
-A block file has a header for the output times followed by one line per block:
+A block file has a **self-describing `key = value` header** of global parameters,
+followed by a line per block. Keys are optional and order-independent; missing
+keys keep their built-in defaults. Lines starting with `#` or `//` are comments,
+and a trailing `# ...` comment is allowed after a value.
 
 ```
-Output times, maximal 20 times, increasing or dt (negative) and tend:
--0.05  0.3
+# global parameters (all optional)
+Kn      = 0.001
+R13     = 0
+CFL     = 0.95
+limiter = harmonic      # none | average | minmod | superbee | harmonic
+dt      = 0.05          # fixed output cadence ...
+tend    = 0.3           # ... until this end time
+#times  = 0.1 0.2 0.3   # alternative: explicit, increasing list of output times
+
 Block data (Maximal NB blocks!):
 number/xmin,xmax/ymin,ymax/nstx,nsty/leftbound,rightbound,bottombound,topbound/
 1/-1.0,0.5/-1.0,0.2/15,12/0,2,-1,4/
 ...
 ```
 
-- **Output times line:** either a list of increasing times, or `-dt  tend`
-  (a negative first value means "every `dt` until `tend`").
+- **Output times:** give `dt` + `tend` for a fixed cadence (an output every `dt`
+  until `tend`), or an explicit increasing `times = t1 t2 ...` list.
+- **`limiter`:** selects the reconstruction slope limiter — `none` (first order),
+  `average` (unlimited central), `minmod`, `superbee`, or `harmonic` (van-Leer-type, default).
 - **Per-block line:** block number, x-range, y-range, cell counts `nstx,nsty`,
-  and the four neighbor codes for left/right/bottom/top edges.
+  and the four neighbor codes for left/right/bottom/top edges. This part keeps
+  the original compact positional format.
 - **Boundary codes:** `0` = extrapolation (open), `-1` = solid wall (adiabatic),
   `>0` = synchronize with that block number (internal multi-block interface).
 
