@@ -23,6 +23,12 @@
 
 double CFLreg = 0.95; // regulated CFL number (target)
 
+int Refine = 1;        // uniform grid refinement factor: multiplies nx,ny of every
+                       // block. Set by 'refine' in the block file or the -refine CLI
+                       // flag (CLI wins). 1 = grids exactly as written in the file.
+int RefineCLI = 0;     // !=0 if -refine was given on the command line; then the
+                       // block-file 'refine' value is ignored (CLI overrides it).
+
 
 //*********************************************************************************************
 // parses the global 'key = value' header of the block file. Reads lines from 'fp'
@@ -32,6 +38,7 @@ double CFLreg = 0.95; // regulated CFL number (target)
 //   limiter                  -- none | average | minmod | superbee | harmonic
 //   tend, dt                 -- fixed-cadence output (every dt until tend)
 //   times = t1 t2 ...        -- explicit, increasing list of output times
+//   refine                   -- uniform grid refinement factor (default 1)
 // Fills 'times' (0-terminated) and returns the number of output times.
 //*********************************************************************************************
 static int ParseHeader( FILE *fp, double *times )
@@ -58,6 +65,7 @@ static int ParseHeader( FILE *fp, double *times )
     else if( strcasecmp(key,"CFL") == 0 ) CFLreg = atof(val);
     else if( strcasecmp(key,"tend")== 0 ) tend   = atof(val);
     else if( strcasecmp(key,"dt")  == 0 ) dt     = atof(val);
+    else if( strcasecmp(key,"refine")== 0 ) { if( !RefineCLI ) Refine = atoi(val); }
     else if( strcasecmp(key,"limiter") == 0 ) {
       char name[64]; sscanf(val," %63s",name); Limiter = LimiterCode(name);
     }
@@ -82,8 +90,9 @@ static int ParseHeader( FILE *fp, double *times )
     n_times = n;
     printf( "   Output every dt = %g until t_end = %g (%d outputs)\n", dt, tend, n );
   };
-  printf( "   Kn = %.4g, R13 = %g, F = %g, CFL = %.2f, limiter = %s\n",
-          Kn, R13, F, CFLreg, LimiterName(Limiter) );
+  if( Refine < 1 ) Refine = 1;
+  printf( "   Kn = %.4g, R13 = %g, F = %g, CFL = %.2f, limiter = %s, refine = %d\n",
+          Kn, R13, F, CFLreg, LimiterName(Limiter), Refine );
 
   return( n_times );
 }
@@ -119,6 +128,8 @@ int SetBlocks( double *times, DB_Block *B, char *filename )
                "Increase NB in defs.h or fix the block file.\n", block_id, NB );
       fclose(fp); return( 0 );
     };
+    nx *= Refine;  // uniform refinement: triple/double/... cells per direction
+    ny *= Refine;
     printf( "    Block %d, x-range: (%+7.2lf,%+7.2lf), y-range: (%+7.2lf,%+7.2lf), grid %dx%d\n",
 		     (block_id), (xmin), (xmax), (ymin), (ymax), (nx), (ny) );
          
@@ -189,7 +200,7 @@ void LoadData( DB_Block *B, int bMax, char *filename )
         Prim[7] = qx;   
         Prim[8] = qy;   
         dst_idx = DBR_Index(i, j, B[nb].range);
-        Conservative( Prim, B[nb].Data[dst_idx].U );
+        Conservative( Prim, B[nb].layer[L_DATA][dst_idx].U );
       };
     };
   };

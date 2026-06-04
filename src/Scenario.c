@@ -43,10 +43,35 @@ void ExternalForce( Vector P, double t, double *g )
 
 
 //*********************************************************************************************
-// provides the initial conditions for the conservative variable vector U at position P.
+// Specular-wall sign table for the conservative state U.
+//   U = { F, Fx, Fy, Fkk, Fxx, Fxy, Fyy, F1x, F1y }
+//     = { rho, rho*v1, rho*v2, E, rho(T11+v1^2), rho(T12+v1v2), rho(T22+v2^2),
+//         x-energy-flux, y-energy-flux }
+// A specular wall mirrors the interior state across the wall normal: an x-wall
+// reflects x -> -x (so every component ODD in v1 flips sign), a y-wall reflects
+// y -> -y (components odd in v2 flip). Even components keep their sign.
+//   x-odd components: Fx(1), Fxy(5), F1x(7)
+//   y-odd components: Fy(2), Fxy(5), F1y(8)
+// Index by side: 0=left, 1=right (x-walls); 2=bottom, 3=top (y-walls).
 //*********************************************************************************************
-void SetInitial( double *U, Vector P )
+const double WallSign[4][N] = {
+//   F   Fx   Fy  Fkk  Fxx  Fxy  Fyy  F1x  F1y
+  { +1, -1, +1, +1, +1, -1, +1, -1, +1 },   // 0 left   (x-wall)
+  { +1, -1, +1, +1, +1, -1, +1, -1, +1 },   // 1 right  (x-wall)
+  { +1, +1, -1, +1, +1, -1, +1, +1, -1 },   // 2 bottom (y-wall)
+  { +1, +1, -1, +1, +1, -1, +1, +1, -1 }    // 3 top    (y-wall)
+};
+
+
+//*********************************************************************************************
+// Provides the conservative variable vector U at position P and time t.
+//   t == 0 : initial conditions.
+//   t  > 0 : prescribed Dirichlet boundary values. For a steady far field these
+//            equal the initial state; encode any time law here if needed.
+//*********************************************************************************************
+void SetInitial( double *U, Vector P, double t )
 {
+   (void)t; // current scenario is steady: Dirichlet values = initial state
    double rho, v1, v2, theta, T11, T12, T22, q1, q2;
    double vs, E;
    double x = P.x, y = P.y;

@@ -7,6 +7,7 @@ CFL     = 0.95
 limiter = harmonic
 dt      = 0.1       # fixed output cadence ...
 tend    = 0.6       # ... until this end time the waves will reach beyond the boundaries
+refine  = 1         # uniform grid refinement factor (multiplies nx,ny of every block)
 
 Block data (Maximal NB blocks!):
 number/xmin,xmax/ymin,ymax/nstx,nsty/leftbound,rightbound,bottombound,topbound/

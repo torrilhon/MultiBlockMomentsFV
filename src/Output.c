@@ -91,7 +91,7 @@ void Output( DB_Block *B, int bMax, int n, double t, int Add )
       for( j=B[nb].range.lfb.j+MBC-nGhost; j<=B[nb].range.rbt.j-MBC+nGhost; j++ ) {
         P = GetPoint(i,j,k,B[nb]);
         dst_idx = (j - B[nb].range.lfb.j)*lineOut + (i - B[nb].range.lfb.i);
-        Primitive( B[nb].Data[dst_idx].U, Prim );
+        Primitive( B[nb].layer[L_DATA][dst_idx].U, Prim );
 
         fprintf( fp, "%20.8f", P.x );
         fprintf( fp, "%20.8f", P.y );

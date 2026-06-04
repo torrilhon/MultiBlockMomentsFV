@@ -13,47 +13,47 @@
 struct timeval time0;
 
 
+// Find flag `keystr` and return the index of its VALUE token (i+1), or -1
+// if the flag is absent or is the last token with no value following it.
+// Exact match on the flag (so "-out" does not match "-output") and the
+// bounds check on i+1 avoid the out-of-range argv read.
+static int argument_value_index(int argc,const char **argv,const char *keystr)
+{
+  int i;
+
+  for (i=1;i<argc;i++)
+    if (strcmp(argv[i],keystr) == 0)
+      return (i+1 < argc) ? i+1 : -1;
+  return -1;
+}
+
 int exists_argument(int argc,const char **argv,const char *keystr)
 {
   int i;
 
-  for (i=1;i<argc;i++) if (strstr(argv[i],keystr)) return 1;
+  for (i=1;i<argc;i++) if (strcmp(argv[i],keystr) == 0) return 1;
   return 0;
 }
 
 float get_float_argument(int argc,const char **argv,const char *keystr)
 {
-  int i;
-  float result=0.0;
-
-  for (i=1;i<argc;i++) {
-    if (strstr(argv[i],keystr)) {
-      result=atof(argv[i+1]);
-      break;
-    }
-  }
-  if (i == argc) {
+  int v = argument_value_index(argc,argv,keystr);
+  if (v < 0) {
     printf("Error: get_float_argument(%s)\n",keystr);
     return (float) -999999999;
   }
-  else return result;
+  return atof(argv[v]);
 }
 
 int get_string_argument(int argc,const char **argv,const char *keystr,char *result)
 {
-  int i;
-
-  for (i=1;i<argc;i++) {
-    if (strstr(argv[i],keystr)) {
-      sprintf(result,"%s",argv[i+1]);
-      break;
-    }
-  }
-  if (i == argc) {
+  int v = argument_value_index(argc,argv,keystr);
+  if (v < 0) {
     fprintf(stderr,"Error: get_string_argument(%s)\n",keystr);
     return -1;
   }
-  else return 0;
+  sprintf(result,"%s",argv[v]);
+  return 0;
 }
 
 

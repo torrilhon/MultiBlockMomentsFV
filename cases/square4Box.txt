@@ -1,0 +1,20 @@
+# square4Box -- 4-block uniform [-1,1]^2 box, ALL OUTER EDGES = WALL (-1).
+# Specular-reflection symmetry test: the initial condition (Scenario.c Riemann2D,
+# a rho=5 disk of radius 0.4 centred at the origin, else rho=1, v=0) is symmetric
+# under x->-x and y->-y. With specular walls on all four sides the solution must
+# stay exactly symmetric and conserve mass/energy to round-off for all time.
+# Internal block-block edges remain synchronisation; only the 4 outer edges are walls.
+Kn      = 0.001
+R13     = 0
+CFL     = 0.95
+limiter = harmonic
+dt      = 0.2
+tend    = 1.0       # long enough for the wave to hit all walls and reflect
+refine  = 1         # uniform grid refinement factor (multiplies nx,ny of every block)
+
+Block data (Maximal NB blocks!):
+number/xmin,xmax/ymin,ymax/nstx,nsty/leftbound,rightbound,bottombound,topbound/
+1/-1.0,0.0/-1.0,0.0/100,100/-1,2,-1,4/
+2/0.0,1.0/-1.0,0.0/100,100/1,-1,-1,3/
+3/0.0,1.0/0.0,1.0/100,100/4,-1,2,-1/
+4/-1.0,0.0/0.0,1.0/100,100/-1,3,1,-1/

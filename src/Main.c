@@ -29,7 +29,7 @@ double TimeUpdate( DB_Block *B, int bMax, double dt, double t );
 double Update( CVector *New, CVector *Data, AuxData *Aux, 
                DB_Block B, CVector *Data0, double dt, double t, int flag );
                
-void SetBoundary( DB_Block *B, int bMax, double t );
+void SetBoundary( DB_Block *B, int bMax, int L, double t );
 
 
 char StartFile[200] = "";
@@ -75,6 +75,14 @@ int main(int argc, const char **argv)
       MakeDirs( OutDir );  // create output dir (and parents) if missing
   };
 
+  // -refine must be set BEFORE the grid is built (SetBlocks consumes it); RefineCLI
+  // makes it take precedence over the block file's 'refine' value.
+  if (exists_argument(argc, argv, "-refine")) {
+      Refine = (int)get_float_argument(argc, argv, "-refine");
+      if (Refine < 1) Refine = 1;
+      RefineCLI = 1;
+  };
+
   // read parameters + grid from the block file (sets Kn, R13, F, CFLreg, Limiter)
   bMax = SetBlocks( OutTime, B, BlockFile );
 
@@ -92,19 +100,19 @@ int main(int argc, const char **argv)
 
   printf( "\n Running: Kn = %.4g, R13 = %g, CFL = %.2f, limiter = %s, BlockFile = \"%s\"\n",
           Kn, R13, CFLreg, LimiterName(Limiter), BlockFile );
+  printf( "   Output directory: \"%s\"\n", OutDir[0] ? OutDir : "." );
   
   printf( "   Initialize: " );
   for( nb=0; nb<bMax; nb++ ) {
     R = B[nb].range;
     printf( "Block %d (Size %d), ",nb+1,(R.rbt.i-R.lfb.i-2*MBC+1)*(R.rbt.j-R.lfb.j-2*MBC+1) );
     
-    B[nb].Data = malloc( DBR_Size(R)*sizeof(CVector) );
-    B[nb].New = malloc( DBR_Size(R)*sizeof(CVector) );
-    B[nb].Tmp = malloc( DBR_Size(R)*sizeof(CVector) );
+    for( int l=0; l<N_LAYER; l++ )
+      B[nb].layer[l] = malloc( DBR_Size(R)*sizeof(CVector) );
     B[nb].Aux = malloc( DBR_Size(R)*sizeof(AuxData) );
     for( dst_idx=0; dst_idx<DBR_Size(R); dst_idx++ ) 
       for( m=0; m<N; m++ )
-        B[nb].Data[dst_idx].U[m] = 0.0;
+        B[nb].layer[L_DATA][dst_idx].U[m] = 0.0;
   }; 
   if( strlen(StartFile) > 0 ) LoadData( B, bMax, StartFile );
   else 
@@ -114,13 +122,13 @@ int main(int argc, const char **argv)
       for( i=R.lfb.i+MBC; i<R.rbt.i-2; i++ )
         for( j=R.lfb.j+MBC; j<R.rbt.j-2; j++ ) {
           dst_idx = (j - R.lfb.j)*line + (i - R.lfb.i);
-          SetInitial( U, GetPoint(i,j,k,B[nb]) );
+          SetInitial( U, GetPoint(i,j,k,B[nb]), 0.0 );
           for( m=0; m<N; m++ )
-            B[nb].Data[dst_idx].U[m] = U[m];
+            B[nb].layer[L_DATA][dst_idx].U[m] = U[m];
         };
     };
 
-  SetBoundary( B, bMax, 0.0 );
+  SetBoundary( B, bMax, L_DATA, 0.0 );
   printf( "    done\n" );
 
   Output( B, bMax, 0, 0.0, -1 );
@@ -141,10 +149,8 @@ int main(int argc, const char **argv)
   printf( "\n Done after %d steps.\n\n", nMax  );
 
   for( nb=0; nb<bMax; nb++ ) {
-    free(B[nb].Data);
-    free(B[nb].New);
+    for( int l=0; l<N_LAYER; l++ ) free(B[nb].layer[l]);
     free(B[nb].Aux);
-    free(B[nb].Tmp);
   };
 
   return(0);
@@ -162,7 +168,7 @@ double LinfDifference( DB_Block B )
 
   for( idx=0; idx<DBR_Size(B.range); idx++ ) 
     for( m=0; m<N; m++ )
-      sum1 = max(sum1,fabs(B.Data[idx].U[m] - B.New[idx].U[m]));
+      sum1 = max(sum1,fabs(B.layer[L_DATA][idx].U[m] - B.layer[L_NEW][idx].U[m]));
 
   return( sum1 );
 };
@@ -216,10 +222,12 @@ int Steps( DB_Block *B, int bMax, double *t, double tend, double CFLmax, double 
 	      CFL, *t, dt, diff, perfidx, minutes, seconds );fflush(stdout);
     };
 
+    // copy the whole New layer (interior AND ghost cells) back into Data, so the
+    // ghost cells stay valid for the first Update of the next step.
     for( nb=0; nb<bMax; nb++ ) 
       for( dst_idx=0; dst_idx<DBR_Size(B[nb].range); dst_idx++ ) 
         for( m=0; m<N; m++ )
-          B[nb].Data[dst_idx].U[m] = B[nb].New[dst_idx].U[m];
+          B[nb].layer[L_DATA][dst_idx].U[m] = B[nb].layer[L_NEW][dst_idx].U[m];
   };
 
   return( nStep );
@@ -239,12 +247,12 @@ double TimeUpdate( DB_Block *B, int bMax, double dt, double t )
 
   /****** two-dimensional second order Heun ****/
   for( nb=0; nb<bMax; nb++ ) 
-    CFL1 = max( CFL1, Update( B[nb].Tmp, B[nb].Data, B[nb].Aux, B[nb], B[nb].Data, dt, t, 0 ) );
-  SetBoundary( B, bMax, t+dt );
+    CFL1 = max( CFL1, Update( B[nb].layer[L_TMP], B[nb].layer[L_DATA], B[nb].Aux, B[nb], B[nb].layer[L_DATA], dt, t, 0 ) );
+  SetBoundary( B, bMax, L_TMP, t+dt );
   
   for( nb=0; nb<bMax; nb++ ) 
-    CFL2 = max( CFL2, Update( B[nb].New, B[nb].Tmp, B[nb].Aux, B[nb], B[nb].Data, dt, t+dt, 1 ) );
-  SetBoundary( B, bMax, t+dt );
+    CFL2 = max( CFL2, Update( B[nb].layer[L_NEW], B[nb].layer[L_TMP], B[nb].Aux, B[nb], B[nb].layer[L_DATA], dt, t+dt, 1 ) );
+  SetBoundary( B, bMax, L_NEW, t+dt );
   
   CFLmax = max(CFL1, max(CFL2, CFLmax));
   return( CFLmax );
@@ -267,7 +275,7 @@ double Update( CVector *New, CVector *Data, AuxData *Aux,
   int i, j, k = 1, n, idx, xp_idx, xm_idx, yp_idx, ym_idx;
   double primR[N], primL[N];
   double primT[N], primB[N];
-  double U0[N], F[N], G[N], GW[N], FW[N];
+  double U0[N], F[N], G[N];
   double CFL = 0, CFL_xflux = 0, CFL_yflux = 0, CFL_prod = 0;
   double  dtdx = dt/B.dx, dtdy = dt/B.dy;
   DB_Range R = B.range;
@@ -338,102 +346,10 @@ double Update( CVector *New, CVector *Data, AuxData *Aux,
           New[xp_idx].U[n] += dtdx*F[n]; 
       }; 
     };
-    
-  if( B.boundary[0] == -1 ) // wall flux for X-boundary cells (left)
-    for( j=R.lfb.j+1; j<=R.rbt.j-1; j++ ) { 
-      i = R.lfb.i+MBC; // 'i' is left wall-cell, correcting flux i-1/2  
-      idx = (j - R.lfb.j)*line + (i - R.lfb.i);  
-      xm_idx = idx - 1;  
-      xp_idx = idx + 1;  
-      for( n=0; n<N; n++ ) {
-        primL[n] = Aux[xm_idx].Prim[n] + 0.5*B.dx*Aux[xm_idx].dPrimX[n];
-        primR[n] = Aux[idx].Prim[n] - 0.5*B.dx*Aux[idx].dPrimX[n];        
-      };
-      xFlux( dtdx, B.dx, primL, Aux[xm_idx].dPrimX, Aux[xm_idx].dPrimY, 
-                         primR, Aux[idx].dPrimX, Aux[idx].dPrimY, F );
-                         
-      for( n=0; n<N; n++ ) {
-        Aux[idx].dPrimX[n] = (Aux[xp_idx].Prim[n]-Aux[idx].Prim[n])/B.dx;
-        Aux[idx].Prim[n] = 1.5*Aux[idx].Prim[n]-0.5*Aux[xp_idx].Prim[n];
-      };                                          
-      xFluxWall( Aux[idx].Prim, Aux[idx].dPrimX, Aux[idx].dPrimY, FW, 
-                 GetPoint(i-0.5,j,k,B), t, B.block_id, 1 );
 
-      for( n=0; n<N; n++ )    
-        New[idx].U[n] += dtdx*(FW[n]-F[n]);
-    };   
-
-  if( B.boundary[1] == -1 ) // wall flux for X-boundary cells (right)
-    for( j=R.lfb.j+1; j<=R.rbt.j-1; j++ ) { 
-      i = R.rbt.i-MBC; // 'i' is right wall-cell, correcting flux i+1/2  
-      idx = (j - R.lfb.j)*line + (i - R.lfb.i);  
-      xp_idx = idx + 1;  
-      xm_idx = idx - 1;  
-      for( n=0; n<N; n++ ) {
-        primL[n] = Aux[idx].Prim[n] + 0.5*B.dx*Aux[idx].dPrimX[n];
-        primR[n] = Aux[xp_idx].Prim[n] - 0.5*B.dx*Aux[xp_idx].dPrimX[n];        
-      };
-      xFlux( dtdx, B.dx, primL, Aux[idx].dPrimX, Aux[idx].dPrimY, 
-                         primR, Aux[xp_idx].dPrimX, Aux[xp_idx].dPrimY, F );
-                         
-      for( n=0; n<N; n++ ) {
-        Aux[idx].dPrimX[n] = (-Aux[xm_idx].Prim[n]+Aux[idx].Prim[n])/B.dx;
-        Aux[idx].Prim[n] = 1.5*Aux[idx].Prim[n]-0.5*Aux[xm_idx].Prim[n];
-      };                                          
-      xFluxWall( Aux[idx].Prim, Aux[idx].dPrimX, Aux[idx].dPrimY, FW, 
-                 GetPoint(i+0.5,j,k,B), t, B.block_id, -1 );
-
-      for( n=0; n<N; n++ )    
-        New[idx].U[n] -= dtdx*(FW[n]-F[n]);
-    };   
-    
-  if( B.boundary[2] == -1 ) // wall flux for Y-boundary cells (bottom)
-    for( i=R.lfb.i+1; i<=R.rbt.i-1; i++ ) { 
-      j = R.lfb.j+MBC; // 'j' is bottom wall-cell, correcting flux j-1/2  
-      idx = (j - R.lfb.j)*line + (i - R.lfb.i);  
-      ym_idx = idx - line;  
-      yp_idx = idx + line;  
-      for( n=0; n<N; n++ ) {
-        primB[n] = Aux[ym_idx].Prim[n] + 0.5*B.dy*Aux[ym_idx].dPrimY[n];
-        primT[n] = Aux[idx].Prim[n] - 0.5*B.dy*Aux[idx].dPrimY[n];        
-      };
-      yFlux( dtdy, B.dy, primB, Aux[ym_idx].dPrimX, Aux[ym_idx].dPrimY, 
-                         primT, Aux[idx].dPrimX, Aux[idx].dPrimY, G );
-                         
-      for( n=0; n<N; n++ ) {
-        Aux[idx].dPrimY[n] = (Aux[yp_idx].Prim[n]-Aux[idx].Prim[n])/B.dy;
-        Aux[idx].Prim[n] = 1.5*Aux[idx].Prim[n]-0.5*Aux[yp_idx].Prim[n];
-      };                                          
-      yFluxWall( Aux[idx].Prim, Aux[idx].dPrimX, Aux[idx].dPrimY, GW, 
-                 GetPoint(i,j-0.5,k,B), t, B.block_id, 1 );
-
-      for( n=0; n<N; n++ )    
-        New[idx].U[n] += dtdy*(GW[n]-G[n]);
-    };   
-
-  if( B.boundary[3] == -1 ) // wall flux for Y-boundary cell (top)
-    for( i=R.lfb.i+1; i<=R.rbt.i-1; i++ ) { 
-      j = R.rbt.j-MBC; // 'j' is top wall-cell, correcting flux j+1/2  
-      idx = (j - R.lfb.j)*line + (i - R.lfb.i);  
-      yp_idx = idx + line;  
-      ym_idx = idx - line;  
-      for( n=0; n<N; n++ ) {
-        primB[n] = Aux[idx].Prim[n] + 0.5*B.dy*Aux[idx].dPrimY[n];
-        primT[n] = Aux[yp_idx].Prim[n] - 0.5*B.dy*Aux[yp_idx].dPrimY[n];        
-      };
-      yFlux( dtdy, B.dy, primB, Aux[idx].dPrimX, Aux[idx].dPrimY, 
-                         primT, Aux[yp_idx].dPrimX, Aux[yp_idx].dPrimY, G );
-                         
-      for( n=0; n<N; n++ ) {
-        Aux[idx].dPrimY[n] = (-Aux[ym_idx].Prim[n]+Aux[idx].Prim[n])/B.dy;
-        Aux[idx].Prim[n] = 1.5*Aux[idx].Prim[n]-0.5*Aux[ym_idx].Prim[n];
-      };                                          
-      yFluxWall( Aux[idx].Prim, Aux[idx].dPrimX, Aux[idx].dPrimY, GW, 
-                 GetPoint(i,j+0.5,k,B), t, B.block_id, -1 );
-
-      for( n=0; n<N; n++ )    
-        New[idx].U[n] -= dtdy*(GW[n]-G[n]);
-    };   
+  // Note: wall boundaries are now imposed through reflected ghost cells (see
+  // Boundary.c, BC_WALL); the interior fluxes above already use the mirrored
+  // ghost data at wall faces, so no separate wall-flux correction is needed.
 
   if( HeunFlag==1 )      // 2nd part Heun-method
     for( idx=0; idx<DBR_Size(B.range); idx++ ) 

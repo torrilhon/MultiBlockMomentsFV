@@ -12,6 +12,19 @@
 
 // (slope-limiter variants LIM_* are defined in Limiter.h)
 
+// the three time-stepping layers held per block; indices into DB_Block.layer[]
+enum { L_DATA = 0,    // current solution (start of step)
+       L_TMP  = 1,    // intermediate Heun stage
+       L_NEW  = 2,    // next solution
+       N_LAYER = 3 };
+
+// boundary-condition kinds, derived from the integer code in the block file:
+//   code > 0  -> BC_SYNC      (value = id of the neighbouring block)
+//   code == 0 -> BC_OPEN      (zero-gradient / extrapolation outflow)
+//   code ==-1 -> BC_WALL      (specular reflection with sign flip, see WallSign)
+//   code ==-2 -> BC_DIRICHLET (prescribed state from SetInitial(U,P,t))
+typedef enum { BC_SYNC, BC_OPEN, BC_WALL, BC_DIRICHLET } BCType;
+
 // physical position vector
 typedef struct {
   double x, y, z;
@@ -34,17 +47,18 @@ typedef struct {
 } AuxData;
 
 // A block represents a rectangular grid with corner (x,y) and spacing (dx,dy)
-// and contains three conservative variable vectors for all cells in the form
-// of array Data, New, and Tmp. The variable boundary encodes the neighbors
-// of the block. (3D is not implemented)
+// and contains the conservative variable vectors for all cells in the three
+// time-stepping layers layer[L_DATA], layer[L_TMP], layer[L_NEW] (replacing
+// the former Data/Tmp/New pointers). The variable boundary encodes the
+// neighbours of the block. (3D is not implemented)
 typedef struct {
-  CVector *Data, *New, *Tmp;
+  CVector *layer[N_LAYER];   // [L_DATA] current, [L_TMP] stage, [L_NEW] next
   AuxData *Aux;
   int block_id; 
   DB_Range range;
   double x, y, z;
   double dx, dy, dz;
-  int boundary[4]; // [0]-left, [1]-right, [2]-bottom, [3]-top, 
-                   // extrapolation = 0, wall = -1, synchro = (nr of block)
+  int boundary[4]; // [0]-left, [1]-right, [2]-bottom, [3]-top
+                   // open = 0, wall = -1, dirichlet = -2, synchro = (nr of block)
 } DB_Block;
 
