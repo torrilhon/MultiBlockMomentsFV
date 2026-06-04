@@ -284,21 +284,24 @@ end
 # Block whose TRUE (face) bounding box contains (x,y).
 #
 # The true boxes tile the domain: neighbouring blocks share a face with no
-# overlap and no gap, so (x,y) lands in a UNIQUE block (a point exactly on a
-# shared face matches the first such block -- harmless, the interpolant is
-# continuous there). No ghost extrapolation into neighbours, hence no value
-# seam. Interpolation inside the block still uses xc/yc with ghost centres, so
-# the half-cell margin near a face interpolates ghost <-> first interior value.
+# overlap and no gap, so (x,y) lands in a UNIQUE block. A point exactly on a
+# shared face is caught by the FIRST matching block in the scan -- harmless,
+# since the interpolant is continuous across the face. No tolerance is used:
+# adjacent boxes derive the shared face from the same uniform grid, so the
+# coordinates coincide and the closed inequalities leave no gap. Keeping the
+# boxes un-inflated preserves the exact tiling invariant. No ghost
+# extrapolation into neighbours, hence no value seam. Interpolation inside the
+# block still uses xc/yc with ghost centres, so the half-cell margin near a
+# face interpolates ghost <-> first interior value.
 #
 # `strict=true`  -> returns 0 only when (x,y) is outside EVERY true box, i.e. a
 #                   genuine exterior gap (e.g. the L-shape notch).
 # `strict=false` -> additionally falls back to the nearest block centre.
 function _find_block(sd::SolutionData, x::Real, y::Real; strict::Bool=false)
-    tol = 1e-9
     for k in 1:sd.nblk
-        if x >= sd.bbox[k,1]-tol && x <= sd.bbox[k,2]+tol &&
-           y >= sd.bbox[k,3]-tol && y <= sd.bbox[k,4]+tol
-            return k
+        if sd.bbox[k,1] <= x <= sd.bbox[k,2] &&
+           sd.bbox[k,3] <= y <= sd.bbox[k,4]
+            return k                  # first matching block wins
         end
     end
     strict && return 0
