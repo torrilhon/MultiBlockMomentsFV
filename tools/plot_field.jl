@@ -98,10 +98,6 @@ Keyword arguments
                  `mesh = (color=(:black,0.25), linewidth=0.3)`
 - `strict`     : mask domain gaps to NaN (blank)
 - `title`      : plot title (default: "<variable> at t = <t>")
-- `rasterize`  : rasterize the field layer in vector (PDF/SVG) output to avoid
-                 hairline anti-aliasing seams between cells/bands. `false` keeps
-                 pure vector; `true` = 1 px/pt; an integer = density scale
-                 (default 2). Does not affect PNG output.
 
 Requires `using CairoMakie` (or GLMakie) to be loaded by the caller. Returns the
 Makie `Figure`; save with `save("name.pdf", fig)`.
@@ -111,7 +107,7 @@ function plot_field(sd::SolutionData, variable, t::Real;
                     nx::Int=400, ny::Union{Int,Nothing}=nothing,
                     levels::Int=20, colormap=:viridis,
                     outline::Bool=false, mesh=false, strict::Bool=true,
-                    colorrange=nothing, title=nothing, rasterize=2)
+                    colorrange=nothing, title=nothing)
     Makie = _require_makie()
 
     xs, ys, Z = sample_field(sd, variable, t; nx=nx, ny=ny, strict=strict)
@@ -129,23 +125,14 @@ function plot_field(sd::SolutionData, variable, t::Real;
     ax  = Makie.Axis(fig[1, 1]; title = ttl, xlabel = "x", ylabel = "y",
                      aspect = Makie.DataAspect())
 
-    # `rasterize` renders the field as a single raster layer in vector output
-    # (PDF/SVG). This suppresses the hairline white lines that CairoMakie's
-    # per-polygon anti-aliasing otherwise draws between abutting heatmap cells
-    # or contourf bands (each polygon anti-aliases against the white page,
-    # lightening shared edges). The data itself is seam-free (blocks tile the
-    # domain), so any remaining thin lines are purely this render artifact.
-    # `rasterize` may be `false` (keep pure vector), `true` (1 px/pt), or an
-    # integer scale (default 2 -> 2x density, crisp without seams).
     plt = if kind === :contourf
         # contourf! takes no `colorrange`; the shared scale is set by an
         # explicit level vector spanning `colorrange`.
         lev = range(colorrange[1], colorrange[2]; length = levels + 1)
-        Makie.contourf!(ax, xs, ys, Z; levels = lev, colormap = colormap,
-                        rasterize = rasterize)
+        Makie.contourf!(ax, xs, ys, Z; levels = lev, colormap = colormap)
     elseif kind === :heatmap
         Makie.heatmap!(ax, xs, ys, Z; colormap = colormap, colorrange = colorrange,
-                       nan_color = :transparent, rasterize = rasterize)
+                       nan_color = :transparent)
     else
         error("unknown kind=$kind (use :heatmap or :contourf)")
     end
