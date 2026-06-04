@@ -189,7 +189,7 @@ void LoadData( DB_Block *B, int bMax, char *filename )
         Prim[7] = qx;   
         Prim[8] = qy;   
         dst_idx = DBR_Index(i, j, B[nb].range);
-        Conservative( Prim, B[nb].Data[dst_idx].U );
+        Conservative( Prim, B[nb].layer[L_DATA][dst_idx].U );
       };
     };
   };

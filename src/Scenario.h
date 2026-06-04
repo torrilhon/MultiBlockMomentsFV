@@ -12,6 +12,9 @@ extern double R13;   // R13 switch
 extern double F;     // volume force in x-direction
 extern char   Type[200];
 
+// specular-wall sign table, indexed [side][variable]; see Scenario.c
+extern const double WallSign[4][N];
+
 double CollFreq( double rho, double theta );
 void   ExternalForce( Vector P, double t, double *g );
-void   SetInitial( double *U, Vector P );
+void   SetInitial( double *U, Vector P, double t );

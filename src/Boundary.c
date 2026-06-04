@@ -1,12 +1,23 @@
 //*********************************************************************************************
-/*                     (boundary routines for R13 esolver in 2d)                              */
+/*                     (boundary routines for the 2d moment solver)                          */
 /*                                                                                            */
+/*  Ghost-cell boundary treatment. Every edge of every block is filled by one routine,       */
+/*  FillEdge(), which handles all four boundary kinds (BCType):                               */
 /*                                                                                            */
-/* (c) Manuel Torrilhon, ETH Zurich, 2010                                                     */
+/*    BC_SYNC      ghost <- interior of the neighbouring block (multi-block coupling)         */
+/*    BC_OPEN      ghost <- nearest interior cell        (zero-gradient / extrapolation)      */
+/*    BC_WALL      ghost <- mirrored interior cell * sign (specular reflection, WallSign)     */
+/*    BC_DIRICHLET ghost <- SetInitial(U, position, t)   (prescribed value, time dependent)   */
+/*                                                                                            */
+/*  The edge index convention (side) matches DB_Block.boundary[]:                             */
+/*    0 = left, 1 = right, 2 = bottom, 3 = top.                                               */
+/*                                                                                            */
+/* (c) Manuel Torrilhon, ETH Zurich, 2010 - RWTH Aachen 2026                                  */
 //*********************************************************************************************
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <assert.h>
 #include <math.h>
 
 #include "database_range.h"
@@ -15,210 +26,144 @@
 #include "Scenario.h"
 
 
-
-Vector GetPoint( double i, double j, double k, DB_Block B );
-
-void BoundaryExtrapolate( DB_Block B )
+//---------------------------------------------------------------------------------------------
+// copy the full conservative vector (all N components) from cell si of src to cell di of dst
+//---------------------------------------------------------------------------------------------
+static inline void CopyCell( CVector *dst, int di, const CVector *src, int si )
 {
-  int i, j, n, m;
-  int dst_idx, src_idx;
-  DB_Range R = B.range;
+  int m;
+  for( m=0; m<N; m++ ) dst[di].U[m] = src[si].U[m];
+}
 
-  for( i=R.lfb.i; i<=R.rbt.i; i++ ) {
-    src_idx = DBR_Index(i, R.lfb.j+MBC, B.range); 
+//---------------------------------------------------------------------------------------------
+// the opposite edge: left<->right, bottom<->top. Used to locate the facing interior strip of
+// a neighbouring block in a synchronisation.
+//---------------------------------------------------------------------------------------------
+static inline int OppositeSide( int side )
+{
+  static const int opp[4] = { 1, 0, 3, 2 };
+  return opp[side];
+}
+
+//---------------------------------------------------------------------------------------------
+// (i,j) of the n-th ghost cell (n=1..MBC) on 'side', at tangential index 'ti', in range R.
+//---------------------------------------------------------------------------------------------
+static inline DB_Point GhostCell( int side, int ti, int n, DB_Range R )
+{
+  DB_Point p;
+  switch( side ) {
+    case 0: p.i = R.lfb.i+MBC-n; p.j = ti;            break; // left
+    case 1: p.i = R.rbt.i-MBC+n; p.j = ti;            break; // right
+    case 2: p.i = ti;            p.j = R.lfb.j+MBC-n; break; // bottom
+    case 3: p.i = ti;            p.j = R.rbt.j-MBC+n; break; // top
+    default: p.i = ti; p.j = ti;                      break;
+  }
+  return p;
+}
+
+//---------------------------------------------------------------------------------------------
+// (i,j) of a source cell on 'side', stepping 's' cells inward from the wall:
+//   s = 1   -> the first interior (edge) cell        (used by BC_OPEN)
+//   s = n   -> the n-th interior layer               (used by BC_WALL mirror, BC_SYNC)
+// Evaluated in range R, which may be the block's own range or a neighbour's.
+//---------------------------------------------------------------------------------------------
+static inline DB_Point InteriorCell( int side, int ti, int s, DB_Range R )
+{
+  DB_Point p;
+  switch( side ) {
+    case 0: p.i = R.lfb.i+MBC-1+s; p.j = ti;              break; // inward from left edge
+    case 1: p.i = R.rbt.i-MBC+1-s; p.j = ti;              break; // inward from right edge
+    case 2: p.i = ti;              p.j = R.lfb.j+MBC-1+s; break; // inward from bottom edge
+    case 3: p.i = ti;              p.j = R.rbt.j-MBC+1-s; break; // inward from top edge
+    default: p.i = ti; p.j = ti;                          break;
+  }
+  return p;
+}
+
+//---------------------------------------------------------------------------------------------
+// Fill the MBC ghost layers of one 'side' of layer L in block D, according to boundary kind bc.
+// For BC_SYNC the source is the neighbouring block S (its facing edge); otherwise S == D.
+// 't' is only used by BC_DIRICHLET.
+//---------------------------------------------------------------------------------------------
+static void FillEdge( DB_Block *D, DB_Block *S, int L, int side, BCType bc, double t )
+{
+  DB_Range Rd = D->range, Rs = S->range;
+  CVector *dst = D->layer[L];
+  const double *sgn = (bc==BC_WALL) ? WallSign[side] : NULL;
+  int ti, t0, t1, n, di, si, m;
+  DB_Point g, s;
+
+  // tangential loop runs along the edge (full range, including corner ghosts)
+  if( side < 2 ) { t0 = Rd.lfb.j; t1 = Rd.rbt.j; }   // left/right: vary j
+  else           { t0 = Rd.lfb.i; t1 = Rd.rbt.i; }   // bottom/top: vary i
+
+  // conforming-interface check: a sync partner must share the tangential extent
+  if( bc == BC_SYNC )
+    assert( (side<2) ? (Rd.rbt.j-Rd.lfb.j)==(Rs.rbt.j-Rs.lfb.j)
+                     : (Rd.rbt.i-Rd.lfb.i)==(Rs.rbt.i-Rs.lfb.i) );
+
+  for( ti=t0; ti<=t1; ti++ )
     for( n=1; n<=MBC; n++ ) {
-      dst_idx = DBR_Index(i, R.lfb.j+MBC-n, B.range);
-        for( m=0; m<N; m++ ) {
-          B.Data[dst_idx].U[m] = B.Data[src_idx].U[m]; 
-          B.Tmp[dst_idx].U[m] = B.Tmp[src_idx].U[m]; 
-          B.New[dst_idx].U[m] = B.New[src_idx].U[m]; 
-        };
-    };
-    src_idx = DBR_Index(i, R.rbt.j-MBC, B.range); 
-    for( n=1; n<=MBC; n++ ) {
-      dst_idx = DBR_Index(i, R.rbt.j-MBC+n, B.range);
-        for( m=0; m<N; m++ ) {
-          B.Data[dst_idx].U[m] = B.Data[src_idx].U[m]; 
-          B.Tmp[dst_idx].U[m] = B.Tmp[src_idx].U[m]; 
-          B.New[dst_idx].U[m] = B.New[src_idx].U[m]; 
-        };
-    };
-  };
+      g  = GhostCell( side, ti, n, Rd );
+      di = DBR_Index( g.i, g.j, Rd );
 
-  for( j=R.lfb.j; j<=R.rbt.j; j++ ) {
-    src_idx = DBR_Index(R.lfb.i+MBC, j, B.range); 
-    for( n=1; n<=MBC; n++ ) {
-      dst_idx = DBR_Index(R.lfb.i+MBC-n, j, B.range);
-        for( m=0; m<N; m++ ) {
-          B.Data[dst_idx].U[m] = B.Data[src_idx].U[m]; 
-          B.Tmp[dst_idx].U[m] = B.Tmp[src_idx].U[m]; 
-          B.New[dst_idx].U[m] = B.New[src_idx].U[m]; 
-        };
-    };
-    src_idx = DBR_Index(R.rbt.i-MBC, j, B.range); 
-    for( n=1; n<=MBC; n++ ) {
-      dst_idx = DBR_Index(R.rbt.i-MBC+n, j, B.range);
-        for( m=0; m<N; m++ ) {
-          B.Data[dst_idx].U[m] = B.Data[src_idx].U[m]; 
-          B.Tmp[dst_idx].U[m] = B.Tmp[src_idx].U[m]; 
-          B.New[dst_idx].U[m] = B.New[src_idx].U[m]; 
-        };
-    };
-  };    
-};
+      switch( bc ) {
+        case BC_SYNC:
+          s  = InteriorCell( OppositeSide(side), ti, n, Rs );
+          CopyCell( dst, di, S->layer[L], DBR_Index(s.i,s.j,Rs) );
+          break;
 
-void BoundarySynchronize( DB_Block B1, DB_Block B0, int WallFlag )
+        case BC_OPEN:
+          s  = InteriorCell( side, ti, 1, Rd );           // nearest interior cell
+          CopyCell( dst, di, dst, DBR_Index(s.i,s.j,Rd) );
+          break;
+
+        case BC_WALL:
+          s  = InteriorCell( side, ti, n, Rd );           // mirror the n-th layer
+          si = DBR_Index( s.i, s.j, Rd );
+          for( m=0; m<N; m++ ) dst[di].U[m] = sgn[m]*dst[si].U[m];
+          break;
+
+        case BC_DIRICHLET:
+          SetInitial( dst[di].U, GetPoint(g.i, g.j, 1, *D), t );
+          break;
+      }
+    }
+}
+
+//---------------------------------------------------------------------------------------------
+// map the integer block-file code to a boundary kind
+//---------------------------------------------------------------------------------------------
+static inline BCType BCFromCode( int code )
 {
-  int i, j, n, m;
-  int dst_idx, src_idx;
-  DB_Range R1 = B1.range, R0 = B0.range; 
+  if( code >  0 ) return BC_SYNC;
+  if( code == 0 ) return BC_OPEN;
+  if( code ==-1 ) return BC_WALL;
+  return BC_DIRICHLET;   // -2 (and any other negative reserved for future kinds)
+}
 
-  if( WallFlag == 2 ) // Bottom of B1(=dst) <- Top of B0(=src)
-    for( i=R1.lfb.i; i<=R1.rbt.i; i++ ) 
-      for( n=1; n<=MBC; n++ ) {
-        src_idx = DBR_Index(i, R0.rbt.j-MBC+1-n, B0.range); 
-        dst_idx = DBR_Index(i, R1.lfb.j+MBC-n, B1.range);
-        for( m=0; m<N; m++ ) {
-          B1.Data[dst_idx].U[m] = B0.Data[src_idx].U[m]; 
-          B1.Tmp[dst_idx].U[m] = B0.Tmp[src_idx].U[m]; 
-          B1.New[dst_idx].U[m] = B0.New[src_idx].U[m]; 
-        };
-      };
-
-  if( WallFlag == 3 ) // Top of B1(=dst) <- Bottom of B0(=src)
-    for( i=R1.lfb.i; i<=R1.rbt.i; i++ ) 
-      for( n=1; n<=MBC; n++ ) {
-        src_idx = DBR_Index(i, R0.lfb.j+MBC-1+n, B0.range); 
-        dst_idx = DBR_Index(i, R1.rbt.j-MBC+n, B1.range);
-        for( m=0; m<N; m++ ) {
-          B1.Data[dst_idx].U[m] = B0.Data[src_idx].U[m]; 
-          B1.Tmp[dst_idx].U[m] = B0.Tmp[src_idx].U[m]; 
-          B1.New[dst_idx].U[m] = B0.New[src_idx].U[m]; 
-        };
-      };
-      
-  if( WallFlag == 0 ) // Left of B1(=dst) <- Right of B0(=src)
-    for( j=R1.lfb.j; j<=R1.rbt.j; j++ ) 
-      for( n=1; n<=MBC; n++ ) {
-        src_idx = DBR_Index(R0.rbt.i-MBC+1-n, j, B0.range); 
-        dst_idx = DBR_Index(R1.lfb.i+MBC-n, j, B1.range);
-        for( m=0; m<N; m++ ) {
-          B1.Data[dst_idx].U[m] = B0.Data[src_idx].U[m]; 
-          B1.Tmp[dst_idx].U[m] = B0.Tmp[src_idx].U[m]; 
-          B1.New[dst_idx].U[m] = B0.New[src_idx].U[m]; 
-        };
-      };
-          
-  if( WallFlag == 1 ) // Right of B1(=dst) <- Left of B0(=src)
-    for( j=R1.lfb.j; j<=R1.rbt.j; j++ ) 
-      for( n=1; n<=MBC; n++ ) {
-        src_idx = DBR_Index(R0.lfb.i+MBC-1+n, j, B0.range); 
-        dst_idx = DBR_Index(R1.rbt.i-MBC+n, j, B1.range);
-        for( m=0; m<N; m++ ) {
-          B1.Data[dst_idx].U[m] = B0.Data[src_idx].U[m]; 
-          B1.Tmp[dst_idx].U[m] = B0.Tmp[src_idx].U[m]; 
-          B1.New[dst_idx].U[m] = B0.New[src_idx].U[m]; 
-        };
-      };
-};
-
-void SetBoundary( DB_Block *B, int bMax, double t )
+//---------------------------------------------------------------------------------------------
+// Fill the ghost cells of layer L for all blocks, for the four edges each, at time t.
+// Self-referential kinds (open/wall/dirichlet) are filled first per block; sync edges then
+// overwrite from the neighbour. Because every block fills its own sync edges from the
+// neighbour's interior, both sides of an interface end up consistent.
+//---------------------------------------------------------------------------------------------
+void SetBoundary( DB_Block *B, int bMax, int L, double t )
 {
-  int n, nb, bSrc;
-  
-  for( nb=0; nb<bMax; nb++ ) 
-    BoundaryExtrapolate( B[nb] );
+  int nb, s, code;
+  BCType bc;
 
-  for( nb=0; nb<bMax; nb++ ) 
-    for( n=0; n<4; n++ ) 
-      if( (bSrc = B[nb].boundary[n]) > 0 )
-        BoundarySynchronize( B[nb], B[bSrc-1], n );
-          
-};
+  // pass 1: open / wall / dirichlet (depend only on the block itself)
+  for( nb=0; nb<bMax; nb++ )
+    for( s=0; s<4; s++ ) {
+      bc = BCFromCode( B[nb].boundary[s] );
+      if( bc != BC_SYNC )
+        FillEdge( &B[nb], &B[nb], L, s, bc, t );
+    }
 
-//*********************************************************************************************
-/********* wall routines (only adiabatic!) ***************************************************/
-//*********************************************************************************************
-
-// x-Wall, WallFlag pointing into domain
-void xFluxWall( double *Prim, double *dPrimX, double *dPrimY, double *F, 
-                Vector P, double t, int block, int WallFlag )
-{
-  #include"primDef.h" // Prim -> rho, v1, v2, theta, T11, T12, T22, q1, q2, vs, E
-  double dsig121, dq11, dissip, m111, m121, m221, R11, R12;
-  
-  dissip = theta/CollFreq(rho,theta)*R13; 
-  dsig121 = (5*dPrimY[4]+8*dPrimX[5]-2*dPrimY[6]-3*dPrimY[3])/15;
-  dq11    = (5*dPrimX[7]+2*dPrimY[8])/3;
-
-  m121 = -dissip*2*dsig121;
-  R11 = -dissip*4.8*dq11;
-
-  v1 = 0.0;
-  T12 = 0.0;
-  R12 = 0.0;
-  q1 = 0.0;
-  m111 = 0.0;
-  m221 = 0.0;
-
-  // m111,m121,m221,R11,R12 are higher-moment wall-flux terms, kept as scaffolding
-  // for a fuller (isothermal / accommodation) wall model but not yet used.
-  (void)m111; (void)m121; (void)m221; (void)R11; (void)R12;
-
-  F[0] = rho*v1;
-  F[1] = rho*T11+rho*v1*v1;
-  F[2] = rho*T12+rho*v1*v2;
-  F[3] = q1+1.5*rho*theta*v1+rho*T11*v1+rho*T12*v2+0.5*rho*v1*vs;
-  F[4] = 1.2*q1+3*rho*T11*v1+rho*v1*v1*v1;
-  F[5] = 0.4*q2+rho*T11*v2+2*rho*T12*v1+rho*v2*v1*v1;
-  F[6] = 0.4*q1+rho*T22*v1+2*rho*T12*v2+rho*v1*v2*v2;
-  F[7] = 0.5*(7*theta*rho*T11-2*theta*rho*theta + 
-         6.4*q1*v1+0.8*q2*v2+4*(rho*T11*v1*v1+rho*T12*v1*v2)+rho*T11*vs+(3*rho*theta+rho*vs)*v1*v1);
-  F[8] = 0.5*(7*theta*rho*T12 + 
-         2.8*(q1*v2+q2*v1)+2*(rho*T12*vs+(rho*T11+rho*T22)*v1*v2)+rho*T12*vs+(3*rho*theta+rho*vs)*v1*v2);
-
-};
-
-// y-Wall, WallFlag pointing into domain
-void yFluxWall( double *Prim, double *dPrimX, double *dPrimY, double *G, 
-                Vector P, double t, int block, int WallFlag )
-{
-  #include"primDef.h" // Prim -> rho, v1, v2, theta, T11, T12, T22, q1, q2, vs, E
-  double dsig122, dq22, dissip, m112, m122, m222, R12, R22;
-  
-  dissip = theta/CollFreq(rho,theta)*R13; 
-  dsig122 = (5*dPrimX[6]+8*dPrimY[5]-2*dPrimX[4]-3*dPrimX[3])/15;
-  dq22    = (5*dPrimY[8]+2*dPrimX[7])/3;
-
-  m122 = -dissip*2*dsig122;
-  R22 = -dissip*4.8*dq22;
-  
-  v2 = 0.0;
-  T12 = 0.0;
-  R12 = 0.0;
-  q2 = 0.0;
-  m222 = 0.0;
-  m112 = 0.0;
-
-  // m112,m122,m222,R12,R22 are higher-moment wall-flux terms, kept as scaffolding
-  // for a fuller (isothermal / accommodation) wall model but not yet used.
-  (void)m112; (void)m122; (void)m222; (void)R12; (void)R22;
-
-  G[0] = rho*v2;
-  G[1] = rho*T12+rho*v1*v2;
-  G[2] = rho*T22+rho*v2*v2;
-  G[3] = q2+1.5*rho*theta*v2+rho*T22*v2+rho*T12*v1+0.5*rho*v2*vs;
-  G[4] = 0.4*q2+rho*T11*v2+2*rho*T12*v1+rho*v2*v1*v1;
-  G[5] = 0.4*q1+rho*T22*v1+2*rho*T12*v2+rho*v1*v2*v2;
-  G[6] = 1.2*q2+3*rho*T22*v2+rho*v2*v2*v2;
-  G[7] = 0.5*(7*theta*rho*T12 + 
-         2.8*(q1*v2+q2*v1)+2*(rho*T12*vs+(rho*T11+rho*T22)*v1*v2)+rho*T12*vs+(3*rho*theta+rho*vs)*v1*v2);
-  G[8] = 0.5*(7*theta*rho*T22-2*theta*rho*theta + 
-         6.4*q2*v2+0.8*q1*v1+4*(rho*T22*v2*v2+rho*T12*v1*v2)+rho*T22*vs+(3*rho*theta+rho*vs)*v2*v2);
-};
-
-
-
-
-
-
+  // pass 2: synchronisation (reads neighbour interior, which pass 1 has set if needed)
+  for( nb=0; nb<bMax; nb++ )
+    for( s=0; s<4; s++ )
+      if( (code = B[nb].boundary[s]) > 0 )
+        FillEdge( &B[nb], &B[code-1], L, s, BC_SYNC, t );
+}
