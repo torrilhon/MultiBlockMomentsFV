@@ -18,7 +18,10 @@
 #include "defs.h"
 #include "tools.h"
 #include "Flux.h"
-#include "Input.h"
+#include "Scenario.h"
+#include "Limiter.h"
+#include "Mesh.h"
+#include "Output.h"
 
 
 int Steps( DB_Block *B, int bMax, double *t, double tend, double CFLmax, double CFLreg );
@@ -27,7 +30,6 @@ double Update( CVector *New, CVector *Data, AuxData *Aux,
                DB_Block B, CVector *Data0, double dt, double t, int flag );
                
 void SetBoundary( DB_Block *B, int bMax, double t );
-void Output( DB_Block *B, int bMax, int n, double t, int Add );
 
 
 char StartFile[200] = "";
@@ -223,50 +225,6 @@ int Steps( DB_Block *B, int bMax, double *t, double tend, double CFLmax, double 
   return( nStep );
 };
 
-
-
-//********************** limiter functions for derivative reconstruction **********************
-inline static double minmod( double d1, double d2 )
-{
-  return( 0.5*(sgn(d1)+sgn(d2))*min(fabs(d1),fabs(d2)) );
-}
-
-inline static double superbee( double theta )
-{
-  if( theta < 0.0 ) return( 0.0 );
-  if( theta < 0.5 ) return( 2*theta );
-  if( theta < 1.0 ) return( 1.0 );
-  if( theta < 2.0 ) return( theta );
-  return( 2.0 );
-}
-
-static double eps = 1.0e-10;
-
-// limiter selection (set from the block file key 'limiter' or the -limiter flag;
-// see Limiter codes / names in Input.c). Default: harmonic mean.
-int Limiter = LIM_HARMONIC;
-
-// slope limiter applied to the pair of one-sided differences (d1,d2).
-// The variant is chosen at runtime via the global 'Limiter'.
-double Limit1( double d1, double d2 )
-{
-  double w1, w2;
-  switch( Limiter ) {
-    case LIM_NONE:      // first order (no reconstruction)
-      return( 0.0 );
-    case LIM_AVERAGE:   // unlimited central average (second order, oscillatory)
-      return( 0.5*(d1+d2) );
-    case LIM_MINMOD:    // minmod (most diffusive TVD limiter)
-      return( minmod(d1,d2) );
-    case LIM_SUPERBEE:  // superbee (least diffusive TVD limiter)
-      return( d1*superbee(d2/d1) );
-    case LIM_HARMONIC:  // harmonic mean (van-Leer-type, smooth)
-    default:
-      w1 = fabs(d1)+eps; w2 = fabs(d2)+eps;
-      return( (w1*d2+w2*d1)/(w1+w2) );
-  };
-}
-//********************** end (limiter functions) *****************************************
 
 
 //*********************************************************************************************
@@ -483,107 +441,6 @@ double Update( CVector *New, CVector *Data, AuxData *Aux,
         New[idx].U[n] = 0.5*New[idx].U[n];
     
   return( dt*CFL_xflux/B.dx+dt*CFL_yflux/B.dy+CFL_prod );
-};
-
-
-//************************************************************
-//********** Output Procedures *******************************
-//************************************************************
-
-char *Convert( double a, char *s )
-{
-  int i = fabs(a+1e-7);
-  int j = fabs(10*(a-i+1e-7));
-  int k = fabs(100*(a-i-0.1*j+1e-7));
-  int l = fabs(1000*(a-i-0.1*j-0.01*k+1e-7));
-
-  if( l != 0 ) snprintf( s, 20, "%dp%d%d%d", i, j, k, l );
-  else if( k != 0 ) snprintf( s, 20, "%dp%d%d", i, j, k );
-  else snprintf( s, 20, "%dp%d", i, j );
-  return( s );
-};
-
-//*********************************************************************************************
-// writes tecplot-files with multiple time results
-// Add > 0 : appends data to existing tAll-file with ID=Add+1
-// Add = 0 : Creates new file with time tXXpXX
-// Add = -1 : Creates new file with tAll-file and ID=1
-//*********************************************************************************************
-void Output( DB_Block *B, int bMax, int n, double t, int Add )
-{
-  extern char OutDir[200];   // output directory set via -out ("" = current dir)
-  int i, j, k = 1, nb, dst_idx, nGhost = 1, lineOut;
-  double Prim[N];
-  char s1[20], s2[20], solv[1024], prefix[224];
-  char *name = NULL;
-  Vector P;
-  FILE *fp;
-
-  // prepend output directory (with trailing slash) if -out was given
-  if( strlen(OutDir) > 0 ) snprintf( prefix, sizeof prefix, "%s/", OutDir );
-  else prefix[0] = '\0';
-
-  if( R13 < 1.0 )
-    snprintf( solv, sizeof solv, "%s%s", "Grad13", Type );
-  else
-    snprintf( solv, sizeof solv, "%s%s", "Reg13", Type );
-
-  if( !Add ) Convert(t,s2);
-  else snprintf( s2, sizeof s2, "All" );
-
-  if( asprintf(&name, "%s%s_nst%d_Kn%s_t%s.dat", prefix, solv,
-    FullGridSize( B, bMax ), Convert(Kn,s1), s2 ) == -1 ) name = NULL;
-  
-  if( Add <= 0 ) {
-    Add = 0;
-    fp = fopen( name, "w" );
-    if( fp == NULL ) { perror( name ); if(name) free(name); return; }
-    fprintf( fp, "TITLE = \"13 Moment Equations in 2D\"\n" ); 
-    fprintf( fp, "VARIABLES = \"x\",\"y\",\"rho\",\"vx\",\"vy\",\"T\",\"p\","); 
-    fprintf( fp, "\"Pxx\",\"Pxy\",\"Pyy\",\"qx\",\"qy\"\n"); 
-  } else {
-    fp = fopen( name, "a+" );
-    if( fp == NULL ) { perror( name ); if(name) free(name); return; }
-  };
-  
-  if( Add == 0 ) printf( "\n  Create File: %s...", name );
-  if( Add > 0 )  printf( "\n  Append (%d) File: %s...", Add, name );
-  fflush(stdout);
-
-  for( nb=0; nb<bMax; nb++ ) {
-    lineOut = B[nb].range.rbt.i - B[nb].range.lfb.i + 1;
-    fprintf( fp, "ZONE T=\"t = %5.3f, Block %d\", I=%d, J=%d, F=POINT", t, nb+1, 
-          B[nb].range.rbt.j-B[nb].range.lfb.j-2*(MBC-nGhost)+1, 
-          B[nb].range.rbt.i-B[nb].range.lfb.i-2*(MBC-nGhost)+1 ); 
-    fprintf( fp, ", SOLUTIONTIME=%5.3f, STRANDID=%d\n", t, Add+1 );
-    
-    for( i=B[nb].range.lfb.i+MBC-nGhost; i<=B[nb].range.rbt.i-MBC+nGhost; i++ ) {
-      for( j=B[nb].range.lfb.j+MBC-nGhost; j<=B[nb].range.rbt.j-MBC+nGhost; j++ ) {
-        P = GetPoint(i,j,k,B[nb]);
-        dst_idx = (j - B[nb].range.lfb.j)*lineOut + (i - B[nb].range.lfb.i);
-        Primitive( B[nb].Data[dst_idx].U, Prim );
-
-        fprintf( fp, "%20.8f", P.x );
-        fprintf( fp, "%20.8f", P.y );
-        fprintf( fp, "%20.8f", Prim[0] );
-        fprintf( fp, "%20.8f", Prim[1] );
-        fprintf( fp, "%20.8f", Prim[2] );
-        fprintf( fp, "%20.8f", Prim[3]/Prim[0] );
-        fprintf( fp, "%20.8f", Prim[3] );
-        fprintf( fp, "%20.8f", Prim[4] );
-        fprintf( fp, "%20.8f", Prim[5] );
-        fprintf( fp, "%20.8f", Prim[6] );
-        fprintf( fp, "%20.8f", Prim[7] );
-        fprintf( fp, "%20.8f", Prim[8] );
-        fprintf( fp, "\n" );
-      };
-    };
-  };
-  
-  fclose( fp );
-  if( name ) free(name);
-  printf( " done\n\n" );
-
 };
 
 

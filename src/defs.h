@@ -10,15 +10,7 @@
 #define NB 10  // maximum number of grid blocks
 #define MBC 3  // number of ghost cells
 
-// slope-limiter variants for the second-order reconstruction (see Limit1 in Main.c)
-enum LimiterType {
-  LIM_NONE     = 0,   // first order (no reconstruction)
-  LIM_AVERAGE  = 1,   // unlimited central average
-  LIM_MINMOD   = 2,   // minmod
-  LIM_SUPERBEE = 3,   // superbee
-  LIM_HARMONIC = 4    // harmonic mean (default)
-};
-
+// (slope-limiter variants LIM_* are defined in Limiter.h)
 
 // physical position vector
 typedef struct {

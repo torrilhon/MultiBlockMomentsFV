@@ -1,173 +1,45 @@
 //*********************************************************************************************
-/*                     (Input-File 2-d R13 equation)                                          */
-/*                                                                                            */
-/*                                                                                            */
-/* (c) Manuel Torrilhon, ETH Zurich, 2010                                                     */
+//                     ( grid / restart input: block file + solution reload )
+//
+//  SetBlocks   -- reads the self-describing block file (key=value header + block table)
+//  ParseHeader -- parses the 'key = value' header section (used by SetBlocks)
+//  LoadData    -- reloads a solution from a Tecplot output file for restarts
+//
+//  (c) Manuel Torrilhon, ETH Zurich, 2010 - RWTH Aachen 2026
 //*********************************************************************************************
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>   // strcasecmp / strncasecmp for the key=value parser
-#include <math.h>
 #include "database_range.h"
 #include "defs.h"
 #include "tools.h"
 #include "Flux.h"
+#include "Scenario.h"   // Kn, R13, F, Type
+#include "Limiter.h"    // Limiter, LimiterCode, LimiterName
+#include "Mesh.h"
 
 
-char Type[200];
-extern char StartFile[200];
-
-
-
-double Kn = 0.001;    // Knudsen number
-double F = 0.0;       // volume-force in x-direction
-double R13 = 0.0;     // R13 switch
 double CFLreg = 0.95; // regulated CFL number (target)
-extern int Limiter;   // slope-limiter selection (defined in Main.c)
 
 
 //*********************************************************************************************
-// map a limiter name (as used in the block file / -limiter flag) to its code,
-// and back. Unknown names fall back to the harmonic-mean default.
+// parses the global 'key = value' header of the block file. Reads lines from 'fp'
+// until the 'Block data' marker (consumed) or EOF. Recognized keys (all optional;
+// missing keys keep their built-in defaults; a CLI flag overrides the file value):
+//   Kn, R13, F, CFL          -- physics / numerics scalars
+//   limiter                  -- none | average | minmod | superbee | harmonic
+//   tend, dt                 -- fixed-cadence output (every dt until tend)
+//   times = t1 t2 ...        -- explicit, increasing list of output times
+// Fills 'times' (0-terminated) and returns the number of output times.
 //*********************************************************************************************
-int LimiterCode( const char *name )
+static int ParseHeader( FILE *fp, double *times )
 {
-  if( strcmp(name,"none")     == 0 ) return( LIM_NONE );
-  if( strcmp(name,"average")  == 0 ) return( LIM_AVERAGE );
-  if( strcmp(name,"minmod")   == 0 ) return( LIM_MINMOD );
-  if( strcmp(name,"superbee") == 0 ) return( LIM_SUPERBEE );
-  if( strcmp(name,"harmonic") == 0 ) return( LIM_HARMONIC );
-  fprintf( stderr, "   WARNING: unknown limiter '%s', using 'harmonic'.\n", name );
-  return( LIM_HARMONIC );
-}
-
-const char *LimiterName( int code )
-{
-  switch( code ) {
-    case LIM_NONE:     return( "none" );
-    case LIM_AVERAGE:  return( "average" );
-    case LIM_MINMOD:   return( "minmod" );
-    case LIM_SUPERBEE: return( "superbee" );
-    default:           return( "harmonic" );
-  };
-}
-
-
-// collision frequency
-double CollFreq( double rho, double theta )
-{
-  double nu0 = 1.0;
-  return( nu0*rho*sqrt(theta)/Kn );
-};
-
-
-// local acceleration
-void ExternalForce( Vector P, double t, double *g )
-{
-  // currently a constant body force in x; position P / time t are available
-  // here if a space- or time-dependent force is needed.
-  g[0] = F;
-  g[1] = 0.0;
-};
-
-
-//*********************************************************************************************
-// provides the initial conditions for the conservative variable vector U at position P.
-//*********************************************************************************************
-void SetInitial( double *U, Vector P )
-{
-   double rho, v1, v2, theta, T11, T12, T22, q1, q2;
-   double vs, E;
-   double x = P.x, y = P.y;
-
-  /*** Problem 1  tend=0.3 *****/
-  sprintf( Type, "Riemann2D" );
-
-  v1 = 0.0;
-  v2 = 0.0;
-  T12 = 0.0;
-  q1 = 0.0;
-  q2 = 0.0;
-  theta = 1.0;
-  
-  if( (sqrt(x*x+y*y) < 0.4) )  {
-    rho = 5.0;
-  }
-  else {
-    rho = 1.0;
-  };
-
-  T11 = theta;
-  T22 = theta;
-  //-----
-
-  /*** Problem 2  tend=0.3 -----
-  sprintf( Type, "Riemann1D" );
-
-  vx = 0.0;
-  vy = 0.0;
-  Pxy = 0.0;
-  qx = 0.0;
-  qy = 0.0;
-
-  if( x < 0.0 )  {
-    rho = 5.0;
-    vy  = 0.0;
-    p   = 5.0;
-  }
-  else {
-    rho = 1.0;
-    vy  = 0.0;
-    p   = 1.0;
-  };
-
-  Pxx = p;
-  Pyy = p;
-  Pzz = p;
-  -----*/
-
-
-  vs  = v1*v1+v2*v2;
-  E = 0.5*rho*vs+1.5*rho*theta;
-
-  U[0] = rho;
-  U[1] = rho*v1;
-  U[2] = rho*v2;
-  U[3] = E;
-  U[4] = rho*(T11+v1*v1);
-  U[5] = rho*(T12+v1*v2);
-  U[6] = rho*(T22+v2*v2);
-  U[7] = q1+E*v1+rho*(T11*v1+T12*v2);
-  U[8] = q2+E*v2+rho*(T12*v1+T22*v2);
-
-}; 
-
-
-//*********************************************************************************************
-// reads block informations from block file 'filename'
-// and returns a block list 'B' and output times 'times'
-//*********************************************************************************************
-int SetBlocks( double *times, DB_Block *B, char *filename )
-{
-  double xmin, xmax, ymin, ymax, dt = 0.0, tend = 0.0;
-  int i, n = 0, bMax=0, block_id, nx, ny, nst = 2*MBC, bound0, bound1, bound2, bound3;
   char tmp[300], key[64], val[200], *p;
-  int n_times = 0;          // number of explicit output times read (via 'times')
-  FILE *fp;
-  DB_Range R1;
+  int i, n, n_times = 0;
+  double dt = 0.0, tend = 0.0;
 
-  fp = fopen( filename, "r");
-  if( fp == NULL ) { perror(filename); return 0; }
-
-  // ----- global header: 'key = value' lines until the 'Block data' marker -----
-  // Recognized keys (all optional; missing keys keep their built-in defaults;
-  // a CLI flag given to the solver overrides the corresponding file value):
-  //   Kn, R13, F, CFL          -- physics / numerics scalars
-  //   limiter                  -- none | average | minmod | superbee | harmonic
-  //   tend, dt                 -- fixed-cadence output (every dt until tend)
-  //   times = t1 t2 ...        -- explicit, increasing list of output times
   printf( "\n   Reading parameters...\n" );
   while( fgets(tmp,300,fp) != NULL ) {
     p = tmp;
@@ -207,10 +79,33 @@ int SetBlocks( double *times, DB_Block *B, char *filename )
     n = (int)((tend+1e-10)/dt);
     for( i=0; i<n; i++ ) times[i] = (i+1)*dt;
     times[n] = 0.0;
+    n_times = n;
     printf( "   Output every dt = %g until t_end = %g (%d outputs)\n", dt, tend, n );
   };
   printf( "   Kn = %.4g, R13 = %g, F = %g, CFL = %.2f, limiter = %s\n",
           Kn, R13, F, CFLreg, LimiterName(Limiter) );
+
+  return( n_times );
+}
+
+
+//*********************************************************************************************
+// reads block informations from block file 'filename'
+// and returns a block list 'B' and output times 'times'
+//*********************************************************************************************
+int SetBlocks( double *times, DB_Block *B, char *filename )
+{
+  double xmin, xmax, ymin, ymax;
+  int n = 0, bMax=0, block_id, nx, ny, nst = 2*MBC, bound0, bound1, bound2, bound3;
+  char tmp[300];
+  FILE *fp;
+  DB_Range R1;
+
+  fp = fopen( filename, "r");
+  if( fp == NULL ) { perror(filename); return 0; }
+
+  // ----- global header: 'key = value' lines until the 'Block data' marker -----
+  ParseHeader( fp, times );
 
   // ----- per-block table (unchanged positional format) -----
   if( fgets(tmp,300,fp) == NULL ) { fclose(fp); fprintf(stderr,"Unexpected EOF before block definitions\n"); return 0; }
