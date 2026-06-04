@@ -219,14 +219,26 @@ function load_solution(path::AbstractString)
         end
     end
 
-    # interior bounding boxes (drop the half-cell ghost overhang)
+    # TRUE geometric bounding box = physical cell-FACE extent of the block.
+    # Stored coords are cell centres with one ghost layer each side:
+    #   xc[1]=ghost centre, xc[2]=first interior centre,
+    #   xc[end-1]=last interior centre, xc[end]=ghost centre.
+    # The block physically covers from the left face of the first interior cell
+    # to the right face of the last interior cell, i.e. half a cell INSIDE each
+    # ghost centre -- exactly the midpoint between the ghost centre and the
+    # first interior centre. These true boxes TILE the domain: neighbouring
+    # blocks share a face with no overlap and no gap, so any (x,y) lands in a
+    # unique block. Interpolation inside that block still uses xc/yc (ghosts
+    # included), so a point in the half-cell margin near a face naturally
+    # interpolates between the ghost value and the first interior value --
+    # correct both at a physical boundary and across an interface halo.
     for k in 1:nblk
         dx = nxg[k] > 1 ? xc[k][2] - xc[k][1] : 0.0
         dy = nyg[k] > 1 ? yc[k][2] - yc[k][1] : 0.0
-        bbox[k, 1] = xc[k][1]   + 0.5dx
-        bbox[k, 2] = xc[k][end] - 0.5dx
-        bbox[k, 3] = yc[k][1]   + 0.5dy
-        bbox[k, 4] = yc[k][end] - 0.5dy
+        bbox[k, 1] = xc[k][2]     - 0.5dx   # left  face of first interior cell
+        bbox[k, 2] = xc[k][end-1] + 0.5dx   # right face of last  interior cell
+        bbox[k, 3] = yc[k][2]     - 0.5dy
+        bbox[k, 4] = yc[k][end-1] + 0.5dy
     end
 
     return SolutionData(title, vnames, times_vec, strand_order, blockids,
@@ -269,25 +281,23 @@ function _locate(c::AbstractVector{<:Real}, q::Real)
     return (i, w)
 end
 
-# Block whose GHOST bbox contains (x,y).
+# Block whose TRUE (face) bounding box contains (x,y).
 #
-# Matching uses the ghost-extended bounding box -- the full stored coordinate
-# range [xc[1], xc[end]] x [yc[1], yc[end]], which reaches half a cell BEYOND
-# the interior edge on every side. This is deliberate: neighbouring blocks'
-# interior bboxes leave a half-cell-wide strip uncovered at a shared interface
-# (interior bbox stops at the first/last interior centre), which previously
-# produced NaN seams (white lines) in `strict` plots. Adjacent ghost bboxes
-# overlap exactly across that strip, so every interface point lands in at least
-# one block and bilinear interpolation (ghost centres included) is continuous.
+# The true boxes tile the domain: neighbouring blocks share a face with no
+# overlap and no gap, so (x,y) lands in a UNIQUE block (a point exactly on a
+# shared face matches the first such block -- harmless, the interpolant is
+# continuous there). No ghost extrapolation into neighbours, hence no value
+# seam. Interpolation inside the block still uses xc/yc with ghost centres, so
+# the half-cell margin near a face interpolates ghost <-> first interior value.
 #
-# `strict=true`  -> returns 0 only for true EXTERIOR gaps (outside every ghost
-#                   bbox, e.g. an L-shape notch); interior seams are covered.
+# `strict=true`  -> returns 0 only when (x,y) is outside EVERY true box, i.e. a
+#                   genuine exterior gap (e.g. the L-shape notch).
 # `strict=false` -> additionally falls back to the nearest block centre.
 function _find_block(sd::SolutionData, x::Real, y::Real; strict::Bool=false)
     tol = 1e-9
     for k in 1:sd.nblk
-        if x >= sd.xc[k][1]-tol && x <= sd.xc[k][end]+tol &&
-           y >= sd.yc[k][1]-tol && y <= sd.yc[k][end]+tol
+        if x >= sd.bbox[k,1]-tol && x <= sd.bbox[k,2]+tol &&
+           y >= sd.bbox[k,3]-tol && y <= sd.bbox[k,4]+tol
             return k
         end
     end

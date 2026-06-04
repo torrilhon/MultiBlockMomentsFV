@@ -3,47 +3,42 @@ using .LoadSolution
 
 sd = load_solution(joinpath(@__DIR__, "..", "reference", "square4.ref.dat"))
 println("blocks=", sd.nblk, " times=", sd.times)
-
-# square4 interfaces: vertical at x=0.5 (between B1/B2 and B4/B3),
-# horizontal at y=0.2. Sample a dense line across each interface and
-# count NaNs with strict=true at t=0.2.
-v = variable_index(sd, "rho")
-t = 0.2
-
-# vertical interface x=0.5, scan y in [-1,1]
-ys = range(-0.999, 0.999; length=500)
-nanc_v = count(y -> isnan(value(sd, 0.5, y, t, v; strict=true)), ys)
-println("NaNs on x=0.5 line (strict): ", nanc_v, " / ", length(ys))
-
-# horizontal interface y=0.2, scan x in [-1,1]
-xs = range(-0.999, 0.999; length=500)
-nanc_h = count(x -> isnan(value(sd, x, 0.2, t, v; strict=true)), xs)
-println("NaNs on y=0.2 line (strict): ", nanc_h, " / ", length(xs))
-
-# whole grid NaN count (interior region should be fully covered)
 xmin,xmax,ymin,ymax = domain_extent(sd)
-gx = range(xmin, xmax; length=201); gy = range(ymin, ymax; length=200)
-tot = 0; nn = 0
-for x in gx, y in gy
-    global tot += 1
-    isnan(value(sd, x, y, t, v; strict=true)) && (global nn += 1)
+println("domain_extent = x[$xmin,$xmax] y[$ymin,$ymax]   (expect exactly [-1,1]^2)")
+
+v = variable_index(sd, "rho"); t = 0.2
+
+# 1. Unique-block coverage on a fine grid + count multi-matches
+function nmatch(sd,x,y)
+    c=0; tol=1e-9
+    for k in 1:sd.nblk
+        (x>=sd.bbox[k,1]-tol && x<=sd.bbox[k,2]+tol && y>=sd.bbox[k,3]-tol && y<=sd.bbox[k,4]+tol) && (c+=1)
+    end
+    c
 end
-println("Grid NaNs (strict) over square domain: ", nn, " / ", tot)
+gx=range(xmin,xmax;length=201); gy=range(ymin,ymax;length=200)
+nn=0; multi=0; zero=0
+for x in gx, y in gy
+    isnan(value(sd,x,y,t,v;strict=true)) && (global nn+=1)
+    m=nmatch(sd,x,y); m==0 && (global zero+=1); m>=2 && (global multi+=1)
+end
+println("grid NaNs (strict): $nn / $(length(gx)*length(gy))")
+println("points matching 0 blocks: $zero ; matching >=2 blocks (on shared faces): $multi")
 
-# continuity check: value just left/right of interface should be close
-yp = 0.0
-vl = value(sd, 0.5-1e-4, yp, t, v; strict=true)
-vr = value(sd, 0.5+1e-4, yp, t, v; strict=true)
-vc = value(sd, 0.5,       yp, t, v; strict=true)
-println("rho at x=0.5- : ", vl)
-println("rho at x=0.5  : ", vc)
-println("rho at x=0.5+ : ", vr)
-println("jump |L-R| = ", abs(vl-vr))
+# 2. continuity across x=0.5 at y=-0.3
+println("\n--- rho across x=0.5 interface (y=-0.3) ---")
+for x in range(0.49,0.51;length=9)
+    println("x=",round(x;digits=4),"  rho=",value(sd,x,-0.3,t,v;strict=true),"  blk=",find_block(sd,x,-0.3;strict=true))
+end
 
-# nodal exactness still holds (interior cell centre of block 1)
-xc1 = sd.xc[1]; yc1 = sd.yc[1]
-ix, iy = 30, 40
-xq, yq = xc1[ix], yc1[iy]
-exact = sd.blocks[3][1][ix,iy,v]   # it=3 -> t=0.2
-interp = value(sd, xq, yq, t, v; strict=true)
-println("nodal exact=", exact, " interp=", interp, " diff=", abs(exact-interp))
+# 3. nodal exactness at an interior centre of block 1
+xc1=sd.xc[1]; yc1=sd.yc[1]; ix,iy=30,40
+exact=sd.blocks[3][1][ix,iy,v]
+interp=value(sd,xc1[ix],yc1[iy],t,v;strict=true)
+println("\nnodal exact=$exact interp=$interp diff=",abs(exact-interp))
+
+# 4. physical boundary: just inside left wall x=-1, and BEYOND it -> NaN
+println("\n--- physical boundary x=-1 (left wall of block 1) ---")
+for x in range(-1.02,-0.98;length=9)
+    println("x=",round(x;digits=4),"  rho=",value(sd,x,-0.3,t,v;strict=true))
+end
