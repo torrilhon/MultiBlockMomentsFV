@@ -1,11 +1,11 @@
 //*********************************************************************************************
-/*                        ( Solver for moment equation      )                                    */
-/*                                                                                            */
-/*  build with 'make' (see Makefile at repo root), or directly:                               */
-/*                                                                                            */
-/*  gcc src/*.c -lm -O3 -o build/moments                                                      */
-/*                                                                                            */
-/* (c) Manuel Torrilhon, ETH Zurich, 2010 - RWTH Aachen 2026                                 */
+//                          ( Solver for moment equations )
+//
+//  build with 'make' (see Makefile at repo root), or directly:
+//
+//    gcc src/*.c -lm -O3 -o build/moments
+//
+//  (c) Manuel Torrilhon, ETH Zurich, 2010 - RWTH Aachen 2026
 //*********************************************************************************************
 
 #include <stdio.h>
@@ -54,9 +54,8 @@ void MakeDirs( const char *path )
 //*********************************************************************************************
 int main(int argc, const char **argv)
 {   
-  int i, j, k = 1, m, n, nb, bMax, nMax, dst_idx, nstx = 0, nsty = 0;
-  double CFL, CFLmax, t, tend, dt, err = 0.0;
-  double err1 = 0.0, err2 = 0.0, err3 = 0.0;
+  int i, j, k = 1, m, n, nb, bMax, nMax, dst_idx;
+  double CFLmax, t, tend;
   double U[N], OutTime[20];
   char BlockFile[200] = "blockfile.txt", limname[64];
   DB_Block B[NB];
@@ -157,7 +156,7 @@ int main(int argc, const char **argv)
 double LinfDifference( DB_Block B )
 {
   int idx, m;
-  double sum1 = 0.0, sum2 = 0.0;
+  double sum1 = 0.0;
 
   for( idx=0; idx<DBR_Size(B.range); idx++ ) 
     for( m=0; m<N; m++ )
@@ -175,15 +174,16 @@ double LinfDifference( DB_Block B )
 int Steps( DB_Block *B, int bMax, double *t, double tend, double CFLmax, double CFLreg )
 {
   int dst_idx, anz = 0, anzRej = 0, anzShow = 1, m, nb;
-  int gridsize = FullGridSize(B,bMax), minutes, seconds;
-  double CFL, dt = 0.0001, perfidx, diff;
+  int gridsize = FullGridSize(B,bMax), minutes = 0, seconds = 0;
+  double CFL, dt = 0.0001, perfidx = 0.0, diff = 0.0;
   
   gettimeofday(&time0,NULL);
   while( *t < tend ) {
     anz++;
 
-    if(!(anz%anzShow)) 
-      printf( " step: %3d...", anz );fflush(stdout);
+    if(!(anz%anzShow)) {
+      printf( " step: %3d...", anz ); fflush(stdout);
+    };
     do {
       CFL = 0.0;
       CFL = TimeUpdate( B, bMax, dt, *t );
@@ -276,7 +276,7 @@ double Limit1( double d1, double d2 )
 //*********************************************************************************************
 double TimeUpdate( DB_Block *B, int bMax, double dt, double t )
 {
-  int idx, n, nb;
+  int nb;
   double CFLmax = 0.0, CFL1 = 0.0, CFL2 = 0.0;
 
   /****** two-dimensional second order Heun ****/
@@ -306,9 +306,9 @@ double TimeUpdate( DB_Block *B, int bMax, double dt, double t )
 double Update( CVector *New, CVector *Data, AuxData *Aux, 
 	       DB_Block B, CVector *Data0, double dt, double t, int HeunFlag )
 {
-  int i, j, k = 1, n, idx, xp_idx, xm_idx, yp_idx, ypp_idx, ym_idx, ymm_idx, mbc = MBC;
-  double primR[N], primL[N], dPrimRX[N], dPrimLX[N], dPrimRY[N], dPrimLY[N];
-  double primT[N], primB[N], dPrimTX[N], dPrimBX[N], dPrimTY[N], dPrimBY[N];
+  int i, j, k = 1, n, idx, xp_idx, xm_idx, yp_idx, ym_idx;
+  double primR[N], primL[N];
+  double primT[N], primB[N];
   double U0[N], F[N], G[N], GW[N], FW[N];
   double CFL = 0, CFL_xflux = 0, CFL_yflux = 0, CFL_prod = 0;
   double  dtdx = dt/B.dx, dtdy = dt/B.dy;
@@ -512,9 +512,9 @@ char *Convert( double a, char *s )
 void Output( DB_Block *B, int bMax, int n, double t, int Add )
 {
   extern char OutDir[200];   // output directory set via -out ("" = current dir)
-  int i, j, k = 1, nb, dst_idx, m, PosCnt, anzMBC = 1, lineOut;
-  double U[N], Prim[N], p, tmp, rho;
-  char s1[20], s2[20], s3[20], s4[20], solv[1024], prefix[224];
+  int i, j, k = 1, nb, dst_idx, anzMBC = 1, lineOut;
+  double Prim[N];
+  char s1[20], s2[20], solv[1024], prefix[224];
   char *name = NULL;
   Vector P;
   FILE *fp;
@@ -546,8 +546,9 @@ void Output( DB_Block *B, int bMax, int n, double t, int Add )
     if( fp == NULL ) { perror( name ); if(name) free(name); return; }
   };
   
-  if( Add == 0 ) printf( "\n  Create File: %s...", name );fflush(stdout);
-  if( Add > 0 ) printf( "\n  Append (%d) File: %s...", Add, name );fflush(stdout);
+  if( Add == 0 ) printf( "\n  Create File: %s...", name );
+  if( Add > 0 )  printf( "\n  Append (%d) File: %s...", Add, name );
+  fflush(stdout);
 
   for( nb=0; nb<bMax; nb++ ) {
     lineOut = B[nb].range.rbt.i - B[nb].range.lfb.i + 1;

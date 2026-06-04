@@ -1,5 +1,10 @@
 // code for primitive variable definition:
- 
+// This fragment is #included inside several functions to unpack the primitive
+// state vector Prim[0..8] into named locals. Each includer uses only a subset
+// of them, so the unused ones are expected -- silence that warning here so it
+// does not have to be repeated at every include site.
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+
   double rho, v1, v2, theta, T11, T12, T22, q1, q2, vs, E;
 
   rho = Prim[0];

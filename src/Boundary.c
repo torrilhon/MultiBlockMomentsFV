@@ -160,7 +160,10 @@ void xFluxWall( double *Prim, double *dPrimX, double *dPrimY, double *F,
   q1 = 0.0;
   m111 = 0.0;
   m221 = 0.0;
-  
+
+  // m111,m121,m221,R11,R12 are higher-moment wall-flux terms, kept as scaffolding
+  // for a fuller (isothermal / accommodation) wall model but not yet used.
+  (void)m111; (void)m121; (void)m221; (void)R11; (void)R12;
 
   F[0] = rho*v1;
   F[1] = rho*T11+rho*v1*v1;
@@ -181,7 +184,7 @@ void yFluxWall( double *Prim, double *dPrimX, double *dPrimY, double *G,
                 Vector P, double t, int block, int WallFlag )
 {
   #include"primDef.h" // Prim -> rho, v1, v2, theta, T11, T12, T22, q1, q2, vs, E
-  double dsig122, dq11, dq22, dissip, m112, m122, m222, R12, R11, R22;
+  double dsig122, dq22, dissip, m112, m122, m222, R12, R22;
   
   dissip = theta/CollFreq(rho,theta)*R13; 
   dsig122 = (5*dPrimX[6]+8*dPrimY[5]-2*dPrimX[4]-3*dPrimX[3])/15;
@@ -196,7 +199,11 @@ void yFluxWall( double *Prim, double *dPrimX, double *dPrimY, double *G,
   q2 = 0.0;
   m222 = 0.0;
   m112 = 0.0;
-  
+
+  // m112,m122,m222,R12,R22 are higher-moment wall-flux terms, kept as scaffolding
+  // for a fuller (isothermal / accommodation) wall model but not yet used.
+  (void)m112; (void)m122; (void)m222; (void)R12; (void)R22;
+
   G[0] = rho*v2;
   G[1] = rho*T12+rho*v1*v2;
   G[2] = rho*T22+rho*v2*v2;

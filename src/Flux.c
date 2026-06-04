@@ -78,8 +78,8 @@ void Conservativ( double *Prim, double *U )
 //****************************************************************************
 void Grad13Flux1D( double *U, double *F )
 {
-  double rho, v1, v2, T11, T12, T22, T33, q1, q2;
-  double vs, theta, sqth, E;
+  double rho, v1, v2, T11, T12, T22, q1, q2;
+  double vs, theta, E;
   double M111, M121, M221, M112, M122, R11, R12;
 
   rho = U[0];
@@ -87,7 +87,6 @@ void Grad13Flux1D( double *U, double *F )
   v2 = U[2]/rho;
   vs = v1*v1+v2*v2;
   theta  = (2*U[3]/rho-vs)/3;
-  sqth = sqrt(theta);
   E = U[3];
   T11 = U[4]/rho-v1*v1;
   T12 = U[5]/rho-v1*v2;
@@ -233,7 +232,7 @@ double ProductionsDirect( double *U, double *New, double dt, Vector X, double t,
   double Prim[N];
   Primitiv( U, Prim );
   #include"primDef.h" // Prim -> rho, v1, v2, theta, T11, T12, T22, q1, q2, vs, E
-  double g[2], coll, P[N], dampfac1, dampfac2;
+  double g[2], coll, dampfac1, dampfac2;
 
   coll = CollFreq(rho,theta)*dt;
 
@@ -272,7 +271,7 @@ double ProductionsDirect( double *U, double *New, double dt, Vector X, double t,
 //**********************************************************************
 void Production( double *U, double *P )
 {
-  double rho, v1, v2, T11, T12, T22, T33, q1, q2;
+  double rho, v1, v2, T11, T12, T22, q1, q2;
   double vs, theta, E, nu;
 
   rho = U[0];

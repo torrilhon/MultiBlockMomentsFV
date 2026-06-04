@@ -66,8 +66,8 @@ double CollFreq( double rho, double theta )
 // local acceleration
 void ExternalForce( Vector P, double t, double *g )
 {
-  double x = P.x, y = P.y;
-  
+  // currently a constant body force in x; position P / time t are available
+  // here if a space- or time-dependent force is needed.
   g[0] = F;
   g[1] = 0.0;
 };
@@ -79,8 +79,8 @@ void ExternalForce( Vector P, double t, double *g )
 void SetInitial( double *U, Vector P )
 {
    double rho, v1, v2, theta, T11, T12, T22, q1, q2;
-   double p, vs, E, Prim[N];
-   double x = P.x, y = P.y, r = P.x*P.x+P.y*P.y;
+   double vs, E;
+   double x = P.x, y = P.y;
 
   /*** Problem 1  tend=0.3 *****/
   sprintf( Type, "Riemann2D" );
@@ -101,9 +101,9 @@ void SetInitial( double *U, Vector P )
 
   T11 = theta;
   T22 = theta;
-  /******/
+  //-----
 
-  /*** Problem 2  tend=0.3 *****
+  /*** Problem 2  tend=0.3 -----
   sprintf( Type, "Riemann1D" );
 
   vx = 0.0;
@@ -126,7 +126,7 @@ void SetInitial( double *U, Vector P )
   Pxx = p;
   Pyy = p;
   Pzz = p;
-  /******/
+  -----*/
 
 
   vs  = v1*v1+v2*v2;
@@ -260,10 +260,9 @@ int SetBlocks( double *times, DB_Block *B, char *filename )
 //*********************************************************************************************
 void LoadData( DB_Block *B, int bMax, char *filename )
 {
-  int i, j, nb, dst_idx, m, anzMBC = 1;
+  int i, j, nb, dst_idx, anzMBC = 1;
   double x, y, rho, vx, vy, p, theta, Pxx, Pxy, Pyy, qx, qy, Prim[N];
   char tmp[500];
-  Vector P;
   FILE *fp;
     
   sprintf( Type, "FromFile(%s)", filename );
