@@ -1,4 +1,4 @@
-# squareSmall -- coarse 4-block square domain (quick smoke test)
+# squareSmall -- coarse non-uniform 4-block square domain (quick smoke test)
 # Global parameters (all optional; a CLI flag overrides the file value).
 #   limiter: none | average | minmod | superbee | harmonic
 Kn      = 0.001

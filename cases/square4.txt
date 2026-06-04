@@ -1,4 +1,4 @@
-# square4 -- 4-block square domain (standard reference test)
+# square4 -- non-uniform 4-block square domain (standard reference test)
 # Global parameters (all optional; a CLI flag overrides the file value).
 #   limiter: none | average | minmod | superbee | harmonic
 Kn      = 0.001

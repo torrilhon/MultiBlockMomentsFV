@@ -1,0 +1,16 @@
+# square4 -- 4-block uniform square domain (standard reference test)
+# Global parameters (all optional; a CLI flag overrides the file value).
+#   limiter: none | average | minmod | superbee | harmonic
+Kn      = 0.001
+R13     = 0
+CFL     = 0.95
+limiter = harmonic
+dt      = 0.1       # fixed output cadence ...
+tend    = 0.6       # ... until this end time the waves will reach beyond the boundaries
+
+Block data (Maximal NB blocks!):
+number/xmin,xmax/ymin,ymax/nstx,nsty/leftbound,rightbound,bottombound,topbound/
+1/-1.0,0.0/-1.0,0.0/100,100/0,2,-1,4/
+2/0.0,1.0/-1.0,0.0/100,100/1,0,-1,3/
+3/0.0,1.0/0.0,1.0/100,100/4,0,2,-1/
+4/-1.0,0.0/0.0,1.0/100,100/0,3,1,-1/
