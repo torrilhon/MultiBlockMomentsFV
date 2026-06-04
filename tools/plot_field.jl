@@ -93,6 +93,9 @@ Keyword arguments
 - `colorrange` : `(lo, hi)` to fix the colour scale; default = data min/max
                  (NaNs ignored) -- ONE shared scale for the whole domain
 - `outline`    : draw interior block bounding boxes on top
+- `mesh`       : overlay the FV mesh (cell faces, ghosts excluded). Pass `true`
+                 or a NamedTuple of mesh options, e.g.
+                 `mesh = (color=(:black,0.25), linewidth=0.3)`
 - `strict`     : mask domain gaps to NaN (blank)
 - `title`      : plot title (default: "<variable> at t = <t>")
 
@@ -103,7 +106,7 @@ function plot_field(sd::SolutionData, variable, t::Real;
                     kind::Symbol=:heatmap,
                     nx::Int=400, ny::Union{Int,Nothing}=nothing,
                     levels::Int=20, colormap=:viridis,
-                    outline::Bool=false, strict::Bool=true,
+                    outline::Bool=false, mesh=false, strict::Bool=true,
                     colorrange=nothing, title=nothing)
     Makie = _require_makie()
 
@@ -137,6 +140,11 @@ function plot_field(sd::SolutionData, variable, t::Real;
     Makie.Colorbar(fig[1, 2], plt; label = vname)
     Makie.limits!(ax, xmin, xmax, ymin, ymax)
 
+    if mesh !== false
+        mopts = mesh === true ? NamedTuple() : mesh
+        draw_mesh!(ax, sd; mopts...)
+    end
+
     if outline
         for k in 1:sd.nblk
             b = block_bounds(sd, k)
@@ -146,6 +154,70 @@ function plot_field(sd::SolutionData, variable, t::Real;
         end
     end
 
+    return fig
+end
+
+# ----------------------------------------------------------------------------
+# FV mesh (cell FACES, not centre-to-centre connections)
+# ----------------------------------------------------------------------------
+"""
+    face_coords(sd, k) -> (xf, yf)
+
+Cell-FACE coordinates of block `k`, ghost cells excluded. Returns `xf`
+(length `nx+1`) and `yf` (length `ny+1`): the grid lines that bound the
+interior finite-volume cells. The stored coordinates are cell CENTRES, so the
+faces are reconstructed as the uniform interior grid from the block's interior
+bounding box (`xmin..xmax` with `nx+1` lines, similarly in y).
+"""
+function face_coords(sd::SolutionData, k::Integer)
+    b  = block_bounds(sd, k)
+    xf = range(b.xmin, b.xmax; length = sd.nx[k] + 1)
+    yf = range(b.ymin, b.ymax; length = sd.ny[k] + 1)
+    return collect(xf), collect(yf)
+end
+
+"""
+    draw_mesh!(ax, sd; blocks=1:sd.nblk, color=(:black,0.25), linewidth=0.3)
+
+Draw the finite-volume mesh of the given `blocks` onto Makie axis `ax`. Lines
+are the cell FACES (ghosts excluded), built from `face_coords`, so this is the
+actual FV grid -- not a connection of cell-centre values. Block faces are drawn
+as batched line segments (NaN-separated) for speed.
+"""
+function draw_mesh!(ax, sd::SolutionData; blocks = 1:sd.nblk,
+                    color = (:black, 0.25), linewidth = 0.3)
+    Makie = _require_makie()
+    xpts = Float64[]; ypts = Float64[]
+    for k in blocks
+        xf, yf = face_coords(sd, k)
+        y0, y1 = yf[1], yf[end]
+        x0, x1 = xf[1], xf[end]
+        for x in xf                      # vertical face lines
+            push!(xpts, x, x, NaN); push!(ypts, y0, y1, NaN)
+        end
+        for y in yf                      # horizontal face lines
+            push!(xpts, x0, x1, NaN); push!(ypts, y, y, NaN)
+        end
+    end
+    Makie.lines!(ax, xpts, ypts; color = color, linewidth = linewidth)
+    return ax
+end
+
+"""
+    plot_mesh(sd; blocks=1:sd.nblk, color=:black, linewidth=0.4, title="FV mesh") -> Figure
+
+Standalone plot of just the multi-block FV mesh (cell faces, ghosts excluded).
+Useful for checking the grid layout. Returns a Makie `Figure`.
+"""
+function plot_mesh(sd::SolutionData; blocks = 1:sd.nblk,
+                   color = :black, linewidth = 0.4, title = "FV mesh")
+    Makie = _require_makie()
+    xmin, xmax, ymin, ymax = domain_extent(sd)
+    fig = Makie.Figure(size = (700, 640))
+    ax  = Makie.Axis(fig[1, 1]; title = title, xlabel = "x", ylabel = "y",
+                     aspect = Makie.DataAspect())
+    draw_mesh!(ax, sd; blocks = blocks, color = color, linewidth = linewidth)
+    Makie.limits!(ax, xmin, xmax, ymin, ymax)
     return fig
 end
 
