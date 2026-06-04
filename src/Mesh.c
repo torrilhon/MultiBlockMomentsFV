@@ -23,8 +23,11 @@
 
 double CFLreg = 0.95; // regulated CFL number (target)
 
-static int Refine = 1; // uniform grid refinement factor (set by 'refine' in the
-                       // block file): multiplies nx,ny of every block. 1 = as-is.
+int Refine = 1;        // uniform grid refinement factor: multiplies nx,ny of every
+                       // block. Set by 'refine' in the block file or the -refine CLI
+                       // flag (CLI wins). 1 = grids exactly as written in the file.
+int RefineCLI = 0;     // !=0 if -refine was given on the command line; then the
+                       // block-file 'refine' value is ignored (CLI overrides it).
 
 
 //*********************************************************************************************
@@ -62,7 +65,7 @@ static int ParseHeader( FILE *fp, double *times )
     else if( strcasecmp(key,"CFL") == 0 ) CFLreg = atof(val);
     else if( strcasecmp(key,"tend")== 0 ) tend   = atof(val);
     else if( strcasecmp(key,"dt")  == 0 ) dt     = atof(val);
-    else if( strcasecmp(key,"refine")== 0 ) Refine = atoi(val);
+    else if( strcasecmp(key,"refine")== 0 ) { if( !RefineCLI ) Refine = atoi(val); }
     else if( strcasecmp(key,"limiter") == 0 ) {
       char name[64]; sscanf(val," %63s",name); Limiter = LimiterCode(name);
     }

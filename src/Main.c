@@ -75,6 +75,14 @@ int main(int argc, const char **argv)
       MakeDirs( OutDir );  // create output dir (and parents) if missing
   };
 
+  // -refine must be set BEFORE the grid is built (SetBlocks consumes it); RefineCLI
+  // makes it take precedence over the block file's 'refine' value.
+  if (exists_argument(argc, argv, "-refine")) {
+      Refine = (int)get_float_argument(argc, argv, "-refine");
+      if (Refine < 1) Refine = 1;
+      RefineCLI = 1;
+  };
+
   // read parameters + grid from the block file (sets Kn, R13, F, CFLreg, Limiter)
   bMax = SetBlocks( OutTime, B, BlockFile );
 
