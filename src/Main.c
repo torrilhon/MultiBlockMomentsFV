@@ -92,6 +92,7 @@ int main(int argc, const char **argv)
 
   printf( "\n Running: Kn = %.4g, R13 = %g, CFL = %.2f, limiter = %s, BlockFile = \"%s\"\n",
           Kn, R13, CFLreg, LimiterName(Limiter), BlockFile );
+  printf( "   Output directory: \"%s\"\n", OutDir[0] ? OutDir : "." );
   
   printf( "   Initialize: " );
   for( nb=0; nb<bMax; nb++ ) {
