@@ -11,18 +11,27 @@
 #   3. After it runs, `sd` and the loaded modules stay live in the REPL so you
 #      can probe interactively (see the examples at the bottom).
 #
+# Re-running is safe. The source files are loaded with Revise's `includet`
+# ("include + track"): Revise updates the existing definitions in place when you
+# edit and save load_solution.jl / plot_field.jl -- no module is redefined, so
+# there is no "two modules export SolutionData" ambiguity, and your edits take
+# effect automatically without a REPL restart. (Plain `include` would redefine
+# `module LoadSolution` on every re-run, shadowing the previous instance and
+# producing `UndefVarError: SolutionData not defined in Main`.)
+#
 # Everything is path-independent via @__DIR__, so the working directory of the
 # REPL does not matter.
 # ----------------------------------------------------------------------------
 
 import Pkg
-Pkg.activate(@__DIR__)            # use the tools/ environment (CairoMakie)
+Pkg.activate(@__DIR__)            # use the tools/ environment (Revise, CairoMakie)
 # Pkg.instantiate()               # uncomment on first run if deps are missing
 
+using Revise                      # live-tracks the included source files
 using CairoMakie                  # plotting backend (loads the FV-mesh helpers too)
 
-include(joinpath(@__DIR__, "load_solution.jl"));  using .LoadSolution
-include(joinpath(@__DIR__, "plot_field.jl"))
+includet(joinpath(@__DIR__, "load_solution.jl"));  using .LoadSolution
+includet(joinpath(@__DIR__, "plot_field.jl"))
 
 # --- choose the result file -------------------------------------------------
 datafile = joinpath(@__DIR__, "..", "reference", "square4.ref.dat")
