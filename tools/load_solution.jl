@@ -269,14 +269,25 @@ function _locate(c::AbstractVector{<:Real}, q::Real)
     return (i, w)
 end
 
-# Block whose interior bbox contains (x,y).
-# `strict=true`  -> returns 0 if the point lies in no interior bbox (domain gap).
-# `strict=false` -> falls back to the nearest block centre.
+# Block whose GHOST bbox contains (x,y).
+#
+# Matching uses the ghost-extended bounding box -- the full stored coordinate
+# range [xc[1], xc[end]] x [yc[1], yc[end]], which reaches half a cell BEYOND
+# the interior edge on every side. This is deliberate: neighbouring blocks'
+# interior bboxes leave a half-cell-wide strip uncovered at a shared interface
+# (interior bbox stops at the first/last interior centre), which previously
+# produced NaN seams (white lines) in `strict` plots. Adjacent ghost bboxes
+# overlap exactly across that strip, so every interface point lands in at least
+# one block and bilinear interpolation (ghost centres included) is continuous.
+#
+# `strict=true`  -> returns 0 only for true EXTERIOR gaps (outside every ghost
+#                   bbox, e.g. an L-shape notch); interior seams are covered.
+# `strict=false` -> additionally falls back to the nearest block centre.
 function _find_block(sd::SolutionData, x::Real, y::Real; strict::Bool=false)
     tol = 1e-9
     for k in 1:sd.nblk
-        if x >= sd.bbox[k,1]-tol && x <= sd.bbox[k,2]+tol &&
-           y >= sd.bbox[k,3]-tol && y <= sd.bbox[k,4]+tol
+        if x >= sd.xc[k][1]-tol && x <= sd.xc[k][end]+tol &&
+           y >= sd.yc[k][1]-tol && y <= sd.yc[k][end]+tol
             return k
         end
     end
