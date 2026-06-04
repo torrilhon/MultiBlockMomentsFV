@@ -16,7 +16,7 @@
 
 
 
-Vector Get_Point( double i, double j, double k, DB_Block B );
+Vector GetPoint( double i, double j, double k, DB_Block B );
 
 void BoundaryExtrapolate( DB_Block B )
 {
@@ -67,7 +67,7 @@ void BoundaryExtrapolate( DB_Block B )
   };    
 };
 
-void BoundarySynchro( DB_Block B1, DB_Block B0, int WallFlag )
+void BoundarySynchronize( DB_Block B1, DB_Block B0, int WallFlag )
 {
   int i, j, n, m;
   int dst_idx, src_idx;
@@ -132,7 +132,7 @@ void SetBoundary( DB_Block *B, int bMax, double t )
   for( nb=0; nb<bMax; nb++ ) 
     for( n=0; n<4; n++ ) 
       if( (bSrc = B[nb].boundary[n]) > 0 )
-        BoundarySynchro( B[nb], B[bSrc-1], n );
+        BoundarySynchronize( B[nb], B[bSrc-1], n );
           
 };
 

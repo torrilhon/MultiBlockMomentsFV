@@ -1,12 +1,12 @@
 /*************************************************************************\
-* Definition und Operationen von Datenbank-Bereichen                      *
+* Definition and operations on database ranges                            *
 *                                                                         *
-* Ein Datenbankbereich ist ein Rechteck, das durch seine beiden Eckpunkte  *
-* beschrieben wird. Die Ecke muss immer durch die globalen Indices        *
-* der linken, unteren und der rechten, oberen Ecke definiert sein.        *
+* A database range is a rectangle defined by its two corner points. The   *
+* corners are always given by the global indices of the left-bottom and   *
+* right-top corner.                                                        *
 *                                                                         *
-* erstellt:  17.2.99 R.Limacher                                           *
-* geaendert: moved to 2D only by co-Pilot May 2026                        *
+* created:  17.2.99 R.Limacher                                            *
+* changed:  moved to 2D only by co-pilot May 2026                         *
 \*************************************************************************/
 
 #ifndef _MOT__DBR
@@ -15,43 +15,42 @@
 typedef struct {
   int i, j;
 } DB_Point;
-/* Datenstruktur zur Adressierung eines Punktes ( Zelle) im 2-D-Gitter.
-   Indices i, j entsprechen den Koordinatenachsen x, y.
+/* Data structure addressing a point (cell) in the 2-D grid.
+   Indices i, j correspond to the coordinate axes x, y.
 */
 
 typedef struct {
   unsigned int level;
   DB_Point lfb, rbt; /* lfb = left-bottom, rbt = right-top */
 } DB_Range;
-/* Datenstruktur zur Adressierung eines rechteckigen Datenbankbereiches.
-   level: Stufe des Gitters, 0..DB_MAXLEVEL-1 (siehe database.c)
-   lfb: linke, untere Ecke des Bereiches
-   rbt: rechte, obere Ecke des Bereiches
-   Es muss also gelten: lfb.i <= rbt.i && lfb.j <= rbt.j
+/* Data structure addressing a rectangular database range.
+   level: grid level, 0..DB_MAXLEVEL-1 (see database.c)
+   lfb: left-bottom corner of the range
+   rbt: right-top corner of the range
+   Must satisfy: lfb.i <= rbt.i && lfb.j <= rbt.j
 */
 
 
 int DBR_Size( DB_Range r);
-/* Gibt die Anzahl Zellen im Bereich r zurueck.
-   r (in): Datenbank-Bereich
-   return = Anzahl Zellen in r
+/* Returns the number of cells in range r.
+   r (in): database range
+   return = number of cells in r
 */
 
 
 int DBR_In_Range( int i, int j, DB_Range r);
-/* Prueft, ob die Zelle ( i, j) im Bereich r liegt.
-   i, j (in): Indices der Zelle
-   r (in): Datenbank-Bereich
-   return   0 = Zelle liegt nicht im Bereich
-          <>0 = Zelle liegt im Bereich
+/* Tests whether cell (i, j) lies within range r.
+   i, j (in): indices of the cell
+   r (in): database range
+   return   0 = cell is not in the range
+          <>0 = cell is in the range
 */
 
 
 int DBR_Index( int i, int j, DB_Range r);
-/* Gibt den Index (Nummer) der Zelle ( i, j) innerhalb des Bereiches r
-   zurueck. Die Nummerierung der Zellen beginnt bei 0 fuer r.lfb und 
-   erfolgt von links nach rechts und vorne nach hinten 
-   bis DBR_Size( r)-1 fuer r.rbt.
+/* Returns the index (number) of cell (i, j) within range r.
+   Cell numbering starts at 0 for r.lfb and runs from left to right and
+   bottom to top up to DBR_Size(r)-1 for r.rbt.
 
       -------------
       |   |   |   |
@@ -69,10 +68,10 @@ int DBR_Index( int i, int j, DB_Range r);
 
          ---> i
  
-   i, j (in): Indices der Zelle
-   r (in): Datenbank-Bereich
-   return: Index der Zelle ( ist return < 0 oder return >= DBR_Size( r), so
-           liegt die Zelle NICHT im Bereich r)
+   i, j (in): indices of the cell
+   r (in): database range
+   return: index of the cell (if return < 0 or return >= DBR_Size(r), the
+           cell is NOT within range r)
 */
 
 #endif

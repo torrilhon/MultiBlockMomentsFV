@@ -48,7 +48,7 @@ typedef struct {
 typedef struct {
   CVector *Data, *New, *Tmp;
   AuxData *Aux;
-  int block_nr; 
+  int block_id; 
   DB_Range range;
   double x, y, z;
   double dx, dy, dz;

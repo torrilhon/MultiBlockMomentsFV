@@ -94,7 +94,7 @@ int FullGridSize( DB_Block *B, int bMax )
   return( sum );
 };
 
-Vector Get_Point( double i, double j, double k, DB_Block B )
+Vector GetPoint( double i, double j, double k, DB_Block B )
 {
   Vector P;
   P.x = B.x+(i-B.range.lfb.i)*B.dx;

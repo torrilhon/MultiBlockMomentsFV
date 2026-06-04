@@ -152,7 +152,7 @@ void SetInitial( double *U, Vector P )
 int SetBlocks( double *times, DB_Block *B, char *filename )
 {
   double xmin, xmax, ymin, ymax, dt = 0.0, tend = 0.0;
-  int i, n = 0, bMax=0, block_nr, nx, ny, nst = 2*MBC, bound0, bound1, bound2, bound3;
+  int i, n = 0, bMax=0, block_id, nx, ny, nst = 2*MBC, bound0, bound1, bound2, bound3;
   char tmp[300], key[64], val[200], *p;
   int n_times = 0;          // number of explicit output times read (via 'times')
   FILE *fp;
@@ -217,15 +217,15 @@ int SetBlocks( double *times, DB_Block *B, char *filename )
   printf( "\n   Reading block definitions...\n" );
   
   while( fscanf( fp, "%d/%lf,%lf/%lf,%lf/%d,%d/%d,%d,%d,%d/%*[^\n]",
-		     &(block_nr), &(xmin), &(xmax), &(ymin), &(ymax), &(nx), &(ny),
+		     &(block_id), &(xmin), &(xmax), &(ymin), &(ymax), &(nx), &(ny),
          &(bound0), &(bound1), &(bound2), &(bound3) ) != EOF ) {
-    if( block_nr < 1 || block_nr > NB ) {
+    if( block_id < 1 || block_id > NB ) {
       fprintf( stderr, "   ERROR: block number %d out of range [1,%d=NB]. "
-               "Increase NB in defs.h or fix the block file.\n", block_nr, NB );
+               "Increase NB in defs.h or fix the block file.\n", block_id, NB );
       fclose(fp); return( 0 );
     };
     printf( "    Block %d, x-range: (%+7.2lf,%+7.2lf), y-range: (%+7.2lf,%+7.2lf), grid %dx%d\n",
-		     (block_nr), (xmin), (xmax), (ymin), (ymax), (nx), (ny) );
+		     (block_id), (xmin), (xmax), (ymin), (ymax), (nx), (ny) );
          
     R1.lfb.i = 1;
     R1.lfb.j = 1;
@@ -233,8 +233,8 @@ int SetBlocks( double *times, DB_Block *B, char *filename )
     R1.rbt.j = ny + nst;
   
     bMax++;
-    n = block_nr-1;
-    B[n].block_nr = block_nr;
+    n = block_id-1;
+    B[n].block_id = block_id;
     B[n].dx = (xmax-xmin)/nx;
     B[n].dy = (ymax-ymin)/ny;
     B[n].x = xmin-(nst/2-0.5)*B[n].dx;
@@ -260,7 +260,7 @@ int SetBlocks( double *times, DB_Block *B, char *filename )
 //*********************************************************************************************
 void LoadData( DB_Block *B, int bMax, char *filename )
 {
-  int i, j, nb, dst_idx, anzMBC = 1;
+  int i, j, nb, dst_idx, nGhost = 1;
   double x, y, rho, vx, vy, p, theta, Pxx, Pxy, Pyy, qx, qy, Prim[N];
   char tmp[500];
   FILE *fp;
@@ -277,8 +277,8 @@ void LoadData( DB_Block *B, int bMax, char *filename )
   for( nb=0; nb<bMax; nb++ ) {
     if( fgets(tmp,300,fp) == NULL ) { fclose(fp); fprintf(stderr,"Unexpected EOF reading block header\n"); return; }
 
-    for( i=B[nb].range.lfb.i+MBC-anzMBC; i<=B[nb].range.rbt.i-MBC+anzMBC; i++ ) {
-      for( j=B[nb].range.lfb.j+MBC-anzMBC; j<=B[nb].range.rbt.j-MBC+anzMBC; j++ ) {
+    for( i=B[nb].range.lfb.i+MBC-nGhost; i<=B[nb].range.rbt.i-MBC+nGhost; i++ ) {
+      for( j=B[nb].range.lfb.j+MBC-nGhost; j<=B[nb].range.rbt.j-MBC+nGhost; j++ ) {
         if( fscanf( fp, " %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf", 
                 &x, &y, &rho, &vx, &vy, &p, &theta, &Pxx, &Pxy, &Pyy, &qx, &qy ) != 12 ) {
           fclose(fp); fprintf(stderr,"Unexpected data format in %s\n", filename); return; }
@@ -294,7 +294,7 @@ void LoadData( DB_Block *B, int bMax, char *filename )
         Prim[7] = qx;   
         Prim[8] = qy;   
         dst_idx = DBR_Index(i, j, B[nb].range);
-        Conservativ( Prim, B[nb].Data[dst_idx].U );
+        Conservative( Prim, B[nb].Data[dst_idx].U );
       };
     };
   };

@@ -26,6 +26,6 @@ unsigned int GetmSec();
 void TickTimer();
 
 int FullGridSize( DB_Block *B, int bMax );
-Vector Get_Point( double i, double j, double k, DB_Block B );
+Vector GetPoint( double i, double j, double k, DB_Block B );
 
 

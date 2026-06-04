@@ -1,8 +1,8 @@
 /*************************************************************************\
-* Definition und Operationen von Datenbank-Bereichen                      *
+* Definition and operations on database ranges                            *
 *                                                                         *
-* erstellt:  17.2.99 R.Limacher                                           *
-* geaendert:                                                              *
+* created:  17.2.99 R.Limacher                                            *
+* changed:                                                                *
 \*************************************************************************/
 
 #include "database_range.h"

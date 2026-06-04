@@ -27,7 +27,7 @@
 //*********************************************************************************************
 // computes primitive variables 'Prim' from conservative vector 'U'
 //*********************************************************************************************
-void Primitiv( double *U, double *Prim )
+void Primitive( double *U, double *Prim )
 {
   double rho, v1, v2, theta, T11, T12, T22, q1, q2;
   double vs, E;
@@ -58,7 +58,7 @@ void Primitiv( double *U, double *Prim )
 //*********************************************************************************************
 // computes conservative variables 'U' from primitive vector 'Prim'
 //*********************************************************************************************
-void Conservativ( double *Prim, double *U )
+void Conservative( double *Prim, double *U )
 {
   #include"primDef.h" // Prim -> rho, v1, v2, theta, T11, T12, T22, q1, q2, vs, E
 
@@ -174,10 +174,10 @@ void Grad13Flux2D( double *U, double *F, double nx, double ny )
 //*********************************************************************************************
 // computes x-Flux from primitive variables and their derivatives
 //*********************************************************************************************
-static inline double F_Flux( double *Prim, double *dPrimX, double *dPrimY, double *F )
+static inline double FFlux( double *Prim, double *dPrimX, double *dPrimY, double *F )
 {
   double U[N];
-  Conservativ( Prim, U );
+  Conservative( Prim, U );
   Grad13Flux2D( U, F, 1.0, 0.0 );
   return( 0.0 );
 };
@@ -185,10 +185,10 @@ static inline double F_Flux( double *Prim, double *dPrimX, double *dPrimY, doubl
 //*********************************************************************************************
 // computes y-Flux from primitive variables and their derivatives
 //*********************************************************************************************
-double G_Flux( double *Prim, double *dPrimX, double *dPrimY, double *G )
+double GFlux( double *Prim, double *dPrimX, double *dPrimY, double *G )
 {
   double U[N];
-  Conservativ( Prim, U );
+  Conservative( Prim, U );
   Grad13Flux2D( U, G, 0.0, 1.0 );
   return( 0.0 );
 };
@@ -230,7 +230,7 @@ static inline double Rdamp( double z, int flag )
 double ProductionsDirect( double *U, double *New, double dt, Vector X, double t, int flag )
 {
   double Prim[N];
-  Primitiv( U, Prim );
+  Primitive( U, Prim );
   #include"primDef.h" // Prim -> rho, v1, v2, theta, T11, T12, T22, q1, q2, vs, E
   double g[2], coll, dampfac1, dampfac2;
 
@@ -340,12 +340,12 @@ static inline double FnumHLLE( double dtdx, double dx, double *PrimL, double *dP
 
   if( flag==1 ) {
     vR = PrimR[1]; vL = PrimL[1];
-    dScaleL = F_Flux( PrimL, dPrimLX, dPrimLY, fL );
-    dScaleR = F_Flux( PrimR, dPrimRX, dPrimRY, fR );
+    dScaleL = FFlux( PrimL, dPrimLX, dPrimLY, fL );
+    dScaleR = FFlux( PrimR, dPrimRX, dPrimRY, fR );
   } else {
     vR = PrimR[2]; vL = PrimL[2];
-    dScaleL = G_Flux( PrimL, dPrimLX, dPrimLY, fL );
-    dScaleR = G_Flux( PrimR, dPrimRX, dPrimRY, fR );
+    dScaleL = GFlux( PrimL, dPrimLX, dPrimLY, fL );
+    dScaleR = GFlux( PrimR, dPrimRX, dPrimRY, fR );
   };
 
   cMax = fabs(0.5*(vL+vR))+max(cR,cL);
@@ -355,8 +355,8 @@ static inline double FnumHLLE( double dtdx, double dx, double *PrimL, double *dP
   lam = (fabs(lamL)-fabs(lamR))/(lamL-lamR);
   alph = (fabs(lamL)-lam*lamL);
   
-  Conservativ( PrimL, UL );
-  Conservativ( PrimR, UR );
+  Conservative( PrimL, UL );
+  Conservative( PrimR, UR );
   
   for( n=0; n<N; n++ )
     flx[n] = 0.5*((1+lam)*fL[n]+(1-lam)*fR[n]-alph*(UR[n]-UL[n]));

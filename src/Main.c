@@ -106,13 +106,13 @@ int main(int argc, const char **argv)
   }; 
   if( strlen(StartFile) > 0 ) LoadData( B, bMax, StartFile );
   else 
-    for( nb=0; nb<bMax; nb++ ) { // Initialisation without boundary 
+    for( nb=0; nb<bMax; nb++ ) { // initialization without boundary 
       R = B[nb].range;
       int line = R.rbt.i - R.lfb.i + 1;
       for( i=R.lfb.i+MBC; i<R.rbt.i-2; i++ )
         for( j=R.lfb.j+MBC; j<R.rbt.j-2; j++ ) {
           dst_idx = (j - R.lfb.j)*line + (i - R.lfb.i);
-          SetInitial( U, Get_Point(i,j,k,B[nb]) );
+          SetInitial( U, GetPoint(i,j,k,B[nb]) );
           for( m=0; m<N; m++ )
             B[nb].Data[dst_idx].U[m] = U[m];
         };
@@ -168,21 +168,21 @@ double LinfDifference( DB_Block B )
 //*********************************************************************************************
 // computes the evolution of the grid in block list B from *t to tend with 
 // step rejection if CFL > CFLmax and adaptive time steping such that
-// CFL = CFLreg. Step information is shown every 'anzShow'
+// CFL = CFLreg. Step information is shown every 'showEvery'
 // calls single time step function 'TimeUpdate'
 //*********************************************************************************************
 int Steps( DB_Block *B, int bMax, double *t, double tend, double CFLmax, double CFLreg )
 {
-  int dst_idx, anz = 0, anzRej = 0, anzShow = 1, m, nb;
+  int dst_idx, nStep = 0, nRej = 0, showEvery = 1, m, nb;
   int gridsize = FullGridSize(B,bMax), minutes = 0, seconds = 0;
   double CFL, dt = 0.0001, perfidx = 0.0, diff = 0.0;
   
   gettimeofday(&time0,NULL);
   while( *t < tend ) {
-    anz++;
+    nStep++;
 
-    if(!(anz%anzShow)) {
-      printf( " step: %3d...", anz ); fflush(stdout);
+    if(!(nStep%showEvery)) {
+      printf( " step: %3d...", nStep ); fflush(stdout);
     };
     do {
       CFL = 0.0;
@@ -190,9 +190,9 @@ int Steps( DB_Block *B, int bMax, double *t, double tend, double CFLmax, double 
     
       if( CFL > CFLmax ) {
         dt = dt*CFLreg/CFL;
-        if(!(anz%anzShow)) 
+        if(!(nStep%showEvery)) 
           printf( "\n   step rejected: CFL = %f (next dt = %f)\n   repeat ...", CFL, dt );
-        anzRej++;
+        nRej++;
       } else {
         *t += dt;
         dt = dt*CFLreg/CFL;
@@ -200,12 +200,12 @@ int Steps( DB_Block *B, int bMax, double *t, double tend, double CFLmax, double 
       };
     } while( CFL > CFLmax );
 
-    if(!(anz%anzShow)) {
+    if(!(nStep%showEvery)) {
       if( dt > 0 ) {
         diff = 0.0;
         for( nb=0; nb<bMax; nb++ ) diff = max( diff, LinfDifference( B[nb] ) );
         diff /= dt;
-        perfidx = (1.0*GetmSec())/(1.0e-3*gridsize*(anz+anzRej));
+        perfidx = (1.0*GetmSec())/(1.0e-3*gridsize*(nStep+nRej));
         minutes = (int)(1.0e-6*perfidx*gridsize*(tend-(*t))/(60*dt));
         seconds = (int)(1.0e-6*perfidx*gridsize*(tend-(*t))/dt)%60;
       };
@@ -220,7 +220,7 @@ int Steps( DB_Block *B, int bMax, double *t, double tend, double CFLmax, double 
           B[nb].Data[dst_idx].U[m] = B[nb].New[dst_idx].U[m];
   };
 
-  return( anz );
+  return( nStep );
 };
 
 
@@ -318,12 +318,12 @@ double Update( CVector *New, CVector *Data, AuxData *Aux,
   for( i=R.lfb.i+1; i<=R.rbt.i-1; i++ )
     for( j=R.lfb.j+1; j<=R.rbt.j-1; j++ ) {
       idx = (j - R.lfb.j)*line + (i - R.lfb.i);
-      ProductionsDirect( Data[idx].U, U0, dt, Get_Point(i,j,k,B), t, 2*HeunFlag+1 );
-      Primitiv( U0, Aux[idx].Prim ); //initial layer projection
+      ProductionsDirect( Data[idx].U, U0, dt, GetPoint(i,j,k,B), t, 2*HeunFlag+1 );
+      Primitive( U0, Aux[idx].Prim ); //initial layer projection
       CFL_prod = max( CFL_prod,
-                      ProductionsDirect( Data[idx].U, New[idx].U, dt, Get_Point(i,j,k,B), t, 2*HeunFlag ) );
+                      ProductionsDirect( Data[idx].U, New[idx].U, dt, GetPoint(i,j,k,B), t, 2*HeunFlag ) );
       if( HeunFlag==1 ) {      // 2nd part Heun-method                
-        ProductionsDirect( Data0[idx].U, U0, dt, Get_Point(i,j,k,B), t, -1 );
+        ProductionsDirect( Data0[idx].U, U0, dt, GetPoint(i,j,k,B), t, -1 );
         for( n=0; n<N; n++ ) 
           New[idx].U[n] += U0[n];
       };
@@ -399,7 +399,7 @@ double Update( CVector *New, CVector *Data, AuxData *Aux,
         Aux[idx].Prim[n] = 1.5*Aux[idx].Prim[n]-0.5*Aux[xp_idx].Prim[n];
       };                                          
       xFluxWall( Aux[idx].Prim, Aux[idx].dPrimX, Aux[idx].dPrimY, FW, 
-                 Get_Point(i-0.5,j,k,B), t, B.block_nr, 1 );
+                 GetPoint(i-0.5,j,k,B), t, B.block_id, 1 );
 
       for( n=0; n<N; n++ )    
         New[idx].U[n] += dtdx*(FW[n]-F[n]);
@@ -423,7 +423,7 @@ double Update( CVector *New, CVector *Data, AuxData *Aux,
         Aux[idx].Prim[n] = 1.5*Aux[idx].Prim[n]-0.5*Aux[xm_idx].Prim[n];
       };                                          
       xFluxWall( Aux[idx].Prim, Aux[idx].dPrimX, Aux[idx].dPrimY, FW, 
-                 Get_Point(i+0.5,j,k,B), t, B.block_nr, -1 );
+                 GetPoint(i+0.5,j,k,B), t, B.block_id, -1 );
 
       for( n=0; n<N; n++ )    
         New[idx].U[n] -= dtdx*(FW[n]-F[n]);
@@ -447,7 +447,7 @@ double Update( CVector *New, CVector *Data, AuxData *Aux,
         Aux[idx].Prim[n] = 1.5*Aux[idx].Prim[n]-0.5*Aux[yp_idx].Prim[n];
       };                                          
       yFluxWall( Aux[idx].Prim, Aux[idx].dPrimX, Aux[idx].dPrimY, GW, 
-                 Get_Point(i,j-0.5,k,B), t, B.block_nr, 1 );
+                 GetPoint(i,j-0.5,k,B), t, B.block_id, 1 );
 
       for( n=0; n<N; n++ )    
         New[idx].U[n] += dtdy*(GW[n]-G[n]);
@@ -471,7 +471,7 @@ double Update( CVector *New, CVector *Data, AuxData *Aux,
         Aux[idx].Prim[n] = 1.5*Aux[idx].Prim[n]-0.5*Aux[ym_idx].Prim[n];
       };                                          
       yFluxWall( Aux[idx].Prim, Aux[idx].dPrimX, Aux[idx].dPrimY, GW, 
-                 Get_Point(i,j+0.5,k,B), t, B.block_nr, -1 );
+                 GetPoint(i,j+0.5,k,B), t, B.block_id, -1 );
 
       for( n=0; n<N; n++ )    
         New[idx].U[n] -= dtdy*(GW[n]-G[n]);
@@ -512,7 +512,7 @@ char *Convert( double a, char *s )
 void Output( DB_Block *B, int bMax, int n, double t, int Add )
 {
   extern char OutDir[200];   // output directory set via -out ("" = current dir)
-  int i, j, k = 1, nb, dst_idx, anzMBC = 1, lineOut;
+  int i, j, k = 1, nb, dst_idx, nGhost = 1, lineOut;
   double Prim[N];
   char s1[20], s2[20], solv[1024], prefix[224];
   char *name = NULL;
@@ -553,15 +553,15 @@ void Output( DB_Block *B, int bMax, int n, double t, int Add )
   for( nb=0; nb<bMax; nb++ ) {
     lineOut = B[nb].range.rbt.i - B[nb].range.lfb.i + 1;
     fprintf( fp, "ZONE T=\"t = %5.3f, Block %d\", I=%d, J=%d, F=POINT", t, nb+1, 
-          B[nb].range.rbt.j-B[nb].range.lfb.j-2*(MBC-anzMBC)+1, 
-          B[nb].range.rbt.i-B[nb].range.lfb.i-2*(MBC-anzMBC)+1 ); 
+          B[nb].range.rbt.j-B[nb].range.lfb.j-2*(MBC-nGhost)+1, 
+          B[nb].range.rbt.i-B[nb].range.lfb.i-2*(MBC-nGhost)+1 ); 
     fprintf( fp, ", SOLUTIONTIME=%5.3f, STRANDID=%d\n", t, Add+1 );
     
-    for( i=B[nb].range.lfb.i+MBC-anzMBC; i<=B[nb].range.rbt.i-MBC+anzMBC; i++ ) {
-      for( j=B[nb].range.lfb.j+MBC-anzMBC; j<=B[nb].range.rbt.j-MBC+anzMBC; j++ ) {
-        P = Get_Point(i,j,k,B[nb]);
+    for( i=B[nb].range.lfb.i+MBC-nGhost; i<=B[nb].range.rbt.i-MBC+nGhost; i++ ) {
+      for( j=B[nb].range.lfb.j+MBC-nGhost; j<=B[nb].range.rbt.j-MBC+nGhost; j++ ) {
+        P = GetPoint(i,j,k,B[nb]);
         dst_idx = (j - B[nb].range.lfb.j)*lineOut + (i - B[nb].range.lfb.i);
-        Primitiv( B[nb].Data[dst_idx].U, Prim );
+        Primitive( B[nb].Data[dst_idx].U, Prim );
 
         fprintf( fp, "%20.8f", P.x );
         fprintf( fp, "%20.8f", P.y );

@@ -3,8 +3,8 @@
 /***************************************************************************/
 
 
-void Primitiv( double *U, double *Prim );
-void Conservativ( double *Prim, double *U );
+void Primitive( double *U, double *Prim );
+void Conservative( double *Prim, double *U );
 double xFlux( double dtdx, double dx, double *primL, double *dPrimLX, double *dPrimLY,
 	      double *primR, double *dPrimRX, double *dPrimRY, double *Flux ); 
 double yFlux( double dtdy, double dy, double *primL, double *dPrimLX, double *dPrimLY,
