@@ -37,11 +37,11 @@ println("variables       : ", sd.varnames)
 println("suggested (nx,ny): ", suggest_resolution(sd))
 
 # --- make a plot ------------------------------------------------------------
-fig = plot_field(sd, "rho", sd.times[end];
-                 kind     = :contourf,
+fig = plot_field(sd, "rho", 0.1;
+                 kind     = :heatmap,
                  levels   = 24,
                  colormap = :viridis,
-                 outline  = true)          # add  mesh = (color=(:black,0.2), linewidth=0.25)  to overlay the FV grid
+                 outline  = false)          # add  mesh = (color=(:black,0.2), linewidth=0.25)  to overlay the FV grid
 
 display(fig)                               # shows inline in the VS Code plot pane
 # save(joinpath(@__DIR__, "rho.pdf"), fig) # uncomment to export
@@ -61,5 +61,28 @@ display(fig)                               # shows inline in the VS Code plot pa
 #   fig2 = plot_field(sd, "T", 0.1; kind=:heatmap); display(fig2)
 #
 #   # standalone FV mesh:
-#   figm = plot_mesh(sd); display(figm)
+figm = plot_mesh(sd, color=(:red,0.9)); display(figm)
 # ----------------------------------------------------------------------------
+
+# ---- 1D line-out: fix y and t, sweep x from -1.0 to 1.0 ----
+# Assumes `sd` is loaded and `using CairoMakie` is active (as in explore.jl).
+
+y   = 0.0
+t   = 0.2
+var = "rho"
+Nx  = 200          # number of sample points
+
+xs   = range(-1.0, 1.0; length = Nx)
+vals = [value(sd, x, y, t, var; strict = true) for x in xs]   # NaN outside domain
+
+# list of (x, val) pairs, if you want it explicitly
+xy = collect(zip(xs, vals))
+
+# piecewise-linear 1D plot (NaNs create natural breaks where there is no data)
+fig = Figure(size = (760, 420))
+ax  = Axis(fig[1, 1];
+           title  = "$var  at  y = $y,  t = $t",
+           xlabel = "x", ylabel = var)
+lines!(ax, xs, vals)                 # straight segments between consecutive points
+display(fig)
+# save("lineout.pdf", fig)
