@@ -128,8 +128,8 @@ function plot_field(sd::SolutionData, variable, t::Real;
     plt = if kind === :contourf
         # contourf! takes no `colorrange`; the shared scale is set by an
         # explicit level vector spanning `colorrange`.
-        lev = range(colorrange[1], colorrange[2]; length = levels + 1)
-        Makie.contourf!(ax, xs, ys, Z; levels = lev, colormap = colormap)
+        lev = range(colorrange[1]-1e-6, colorrange[2]+1e-6; length = levels + 1)
+        Makie.contourf!(ax, xs, ys, Z; levels = lev, colormap = colormap )
     elseif kind === :heatmap
         Makie.heatmap!(ax, xs, ys, Z; colormap = colormap, colorrange = colorrange,
                        nan_color = :transparent)
