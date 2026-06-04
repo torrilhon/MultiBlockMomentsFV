@@ -1,0 +1,160 @@
+# plot_field.jl
+# ----------------------------------------------------------------------------
+# Whole-domain plotting for MultiBlockMomentsFV results, built on the
+# dense-output `value(x,y,t,variable)` from load_solution.jl.
+#
+# Rationale: plotting blocks individually leads to inconsistent colour scales,
+# unsynchronised contour levels, and visible seams at block interfaces (cell
+# centres of neighbouring blocks are half a cell apart and share no nodes).
+# Instead we sample the dense output onto ONE uniform grid spanning the entire
+# domain, so a single heatmap/contour call gives a consistent, seam-free image.
+# Points in domain gaps (e.g. an L-shape notch) are masked to NaN and render
+# blank.
+#
+# Backend: CairoMakie (pure-Julia, publication-quality vector output).
+#   import Pkg; Pkg.add("CairoMakie")
+#
+# Usage:
+#   include("load_solution.jl"); using .LoadSolution
+#   include("plot_field.jl")
+#   sd  = load_solution("../reference/square4.ref.dat")
+#   fig = plot_field(sd, "rho", 0.2)                 # heatmap at t=0.2
+#   save("rho.pdf", fig)
+#   plot_field(sd, "T", 0.15; kind=:contourf, levels=30, outline=true)
+# ----------------------------------------------------------------------------
+
+using .LoadSolution
+
+# ----------------------------------------------------------------------------
+# Backend-agnostic sampler
+# ----------------------------------------------------------------------------
+"""
+    sample_field(sd, variable, t; nx=400, ny=nothing, strict=true)
+        -> (xs, ys, Z)
+
+Sample the dense output of `variable` at time `t` onto a uniform grid covering
+the whole domain. Returns the grid coordinate vectors `xs` (length nx), `ys`
+(length ny) and `Z::Matrix` of size `(nx, ny)` with `Z[i,j] = value(xs[i],ys[j],t)`.
+Domain gaps are `NaN` when `strict=true`.
+
+`nx` defaults to 400; `ny` is chosen to preserve the domain aspect ratio if not
+given. For seam-free, feature-preserving output choose a resolution at least as
+fine as the finest block (see `suggest_resolution`).
+"""
+function sample_field(sd::SolutionData, variable, t::Real;
+                      nx::Int=400, ny::Union{Int,Nothing}=nothing,
+                      strict::Bool=true)
+    xmin, xmax, ymin, ymax = domain_extent(sd)
+    if ny === nothing
+        aspect = (ymax - ymin) / (xmax - xmin)
+        ny = max(2, round(Int, nx * aspect))
+    end
+    xs = range(xmin, xmax; length=nx)
+    ys = range(ymin, ymax; length=ny)
+    v  = variable_index(sd, variable)
+    Z  = Matrix{Float64}(undef, nx, ny)
+    @inbounds for j in 1:ny, i in 1:nx
+        Z[i, j] = value(sd, xs[i], ys[j], t, v; strict=strict)
+    end
+    return collect(xs), collect(ys), Z
+end
+
+"""
+    suggest_resolution(sd) -> (nx, ny)
+
+Resolution that matches the finest block, so the uniform sampling grid does not
+under-resolve any block. Use as a starting point for `sample_field`.
+"""
+function suggest_resolution(sd::SolutionData)
+    xmin, xmax, ymin, ymax = domain_extent(sd)
+    # finest cell size over all blocks
+    hx = minimum((sd.bbox[k,2]-sd.bbox[k,1]) / max(sd.nx[k],1) for k in 1:sd.nblk)
+    hy = minimum((sd.bbox[k,4]-sd.bbox[k,3]) / max(sd.ny[k],1) for k in 1:sd.nblk)
+    nx = max(2, ceil(Int, (xmax-xmin)/hx))
+    ny = max(2, ceil(Int, (ymax-ymin)/hy))
+    return (nx, ny)
+end
+
+# ----------------------------------------------------------------------------
+# CairoMakie plotting
+# ----------------------------------------------------------------------------
+"""
+    plot_field(sd, variable, t; kind=:heatmap, nx=400, ny=nothing,
+               levels=20, colormap=:viridis, outline=false, strict=true,
+               colorrange=nothing, title=nothing) -> Figure
+
+Plot `variable` over the whole domain at time `t` on a single consistent grid.
+
+Keyword arguments
+- `kind`       : `:heatmap` (pixel-smooth field) or `:contourf` (filled contours)
+- `nx`,`ny`    : sampling resolution (ny auto from aspect if omitted)
+- `levels`     : number of filled-contour levels (only for `:contourf`)
+- `colormap`   : any Makie colormap symbol
+- `colorrange` : `(lo, hi)` to fix the colour scale; default = data min/max
+                 (NaNs ignored) -- ONE shared scale for the whole domain
+- `outline`    : draw interior block bounding boxes on top
+- `strict`     : mask domain gaps to NaN (blank)
+- `title`      : plot title (default: "<variable> at t = <t>")
+
+Requires `using CairoMakie` (or GLMakie) to be loaded by the caller. Returns the
+Makie `Figure`; save with `save("name.pdf", fig)`.
+"""
+function plot_field(sd::SolutionData, variable, t::Real;
+                    kind::Symbol=:heatmap,
+                    nx::Int=400, ny::Union{Int,Nothing}=nothing,
+                    levels::Int=20, colormap=:viridis,
+                    outline::Bool=false, strict::Bool=true,
+                    colorrange=nothing, title=nothing)
+    Makie = _require_makie()
+
+    xs, ys, Z = sample_field(sd, variable, t; nx=nx, ny=ny, strict=strict)
+
+    vname = variable isa AbstractString ? variable : sd.varnames[variable_index(sd,variable)]
+    ttl   = title === nothing ? "$(vname) at t = $(round(t; digits=4))" : title
+
+    if colorrange === nothing
+        finite = filter(isfinite, Z)
+        colorrange = isempty(finite) ? (0.0, 1.0) : (minimum(finite), maximum(finite))
+    end
+
+    xmin, xmax, ymin, ymax = domain_extent(sd)
+    fig = Makie.Figure(size = (760, 640))
+    ax  = Makie.Axis(fig[1, 1]; title = ttl, xlabel = "x", ylabel = "y",
+                     aspect = Makie.DataAspect())
+
+    plt = if kind === :contourf
+        # contourf! takes no `colorrange`; the shared scale is set by an
+        # explicit level vector spanning `colorrange`.
+        lev = range(colorrange[1], colorrange[2]; length = levels + 1)
+        Makie.contourf!(ax, xs, ys, Z; levels = lev, colormap = colormap)
+    elseif kind === :heatmap
+        Makie.heatmap!(ax, xs, ys, Z; colormap = colormap, colorrange = colorrange,
+                       nan_color = :transparent)
+    else
+        error("unknown kind=$kind (use :heatmap or :contourf)")
+    end
+
+    Makie.Colorbar(fig[1, 2], plt; label = vname)
+    Makie.limits!(ax, xmin, xmax, ymin, ymax)
+
+    if outline
+        for k in 1:sd.nblk
+            b = block_bounds(sd, k)
+            rx = [b.xmin, b.xmax, b.xmax, b.xmin, b.xmin]
+            ry = [b.ymin, b.ymin, b.ymax, b.ymax, b.ymin]
+            Makie.lines!(ax, rx, ry; color = (:white, 0.6), linewidth = 0.8)
+        end
+    end
+
+    return fig
+end
+
+# Lazily fetch a loaded Makie-compatible module (CairoMakie or GLMakie) from Main.
+function _require_makie()
+    for sym in (:CairoMakie, :GLMakie, :WGLMakie, :Makie)
+        if isdefined(Main, sym)
+            return getfield(Main, sym)
+        end
+    end
+    error("No Makie backend loaded. Run `using CairoMakie` (or GLMakie) first.")
+end

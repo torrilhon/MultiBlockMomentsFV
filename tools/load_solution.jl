@@ -32,7 +32,7 @@
 module LoadSolution
 
 export SolutionData, load_solution, value, variable_index,
-       block_bounds, gridsize
+       block_bounds, gridsize, find_block, domain_extent
 
 # ----------------------------------------------------------------------------
 # Data structure  (ragged, with conceptual 5-D access)
@@ -269,8 +269,10 @@ function _locate(c::AbstractVector{<:Real}, q::Real)
     return (i, w)
 end
 
-# Block whose interior bbox contains (x,y); fall back to nearest block centre.
-function _find_block(sd::SolutionData, x::Real, y::Real)
+# Block whose interior bbox contains (x,y).
+# `strict=true`  -> returns 0 if the point lies in no interior bbox (domain gap).
+# `strict=false` -> falls back to the nearest block centre.
+function _find_block(sd::SolutionData, x::Real, y::Real; strict::Bool=false)
     tol = 1e-9
     for k in 1:sd.nblk
         if x >= sd.bbox[k,1]-tol && x <= sd.bbox[k,2]+tol &&
@@ -278,6 +280,7 @@ function _find_block(sd::SolutionData, x::Real, y::Real)
             return k
         end
     end
+    strict && return 0
     best = 1; bestd = Inf
     for k in 1:sd.nblk
         cx = 0.5*(sd.bbox[k,1]+sd.bbox[k,2]); cy = 0.5*(sd.bbox[k,3]+sd.bbox[k,4])
@@ -285,6 +288,27 @@ function _find_block(sd::SolutionData, x::Real, y::Real)
         d < bestd && (bestd = d; best = k)
     end
     return best
+end
+
+"""
+    find_block(sd, x, y; strict=false) -> Int
+
+Index of the block whose interior bounding box contains `(x, y)`. With
+`strict=true`, returns `0` when the point lies in a domain gap (outside every
+block); otherwise returns the nearest block.
+"""
+find_block(sd::SolutionData, x::Real, y::Real; strict::Bool=false) =
+    _find_block(sd, x, y; strict=strict)
+
+"""
+    domain_extent(sd) -> (xmin, xmax, ymin, ymax)
+
+Bounding box of the whole multi-block domain (union of interior block boxes).
+"""
+function domain_extent(sd::SolutionData)
+    xmin = minimum(@view sd.bbox[:,1]); xmax = maximum(@view sd.bbox[:,2])
+    ymin = minimum(@view sd.bbox[:,3]); ymax = maximum(@view sd.bbox[:,4])
+    return (xmin, xmax, ymin, ymax)
 end
 
 # Bilinear interpolation of variable v on block k at time-slice it.
@@ -299,17 +323,22 @@ function _interp_space(sd::SolutionData, it::Int, k::Int, x::Real, y::Real, v::I
 end
 
 """
-    value(sd, x, y, t, variable) -> Float64
+    value(sd, x, y, t, variable; strict=false) -> Float64
 
 Dense-output evaluation: the value of `variable` (a name like `"rho"` or a
 column index) at physical point `(x, y)` and absolute time `t`. The block and
 grid cell are located automatically; interpolation is bilinear in space (ghost
 cells included) and linear in time. `t` outside the stored range is clamped.
+
+With `strict=true`, points lying in a domain gap (outside every block) return
+`NaN` instead of being filled from the nearest block -- useful for masking
+non-convex domains (e.g. an L-shape notch) when plotting.
 """
-function value(sd::SolutionData, x::Real, y::Real, t::Real, variable)
+function value(sd::SolutionData, x::Real, y::Real, t::Real, variable; strict::Bool=false)
     v  = variable_index(sd, variable)
+    k  = _find_block(sd, x, y; strict=strict)
+    k == 0 && return NaN
     (it, wt) = _locate(sd.times, t)
-    k  = _find_block(sd, x, y)
     flo = _interp_space(sd, it, k, x, y, v)
     wt == 0.0 && return flo
     fhi = _interp_space(sd, it+1, k, x, y, v)

@@ -13,3 +13,6 @@ a.out
 
 # stray output if binary is run from repo root without -out
 /*.dat
+
+# Julia tools env (manifest is machine-specific)
+tools/Manifest.toml
