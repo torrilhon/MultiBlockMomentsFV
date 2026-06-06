@@ -1,7 +1,7 @@
 # MultiBlockMomentsFV binary output header
 # FORMAT_VERSION = 1
-# CREATED_UTC = 2026-06-06T05:26:38Z
-# GIT_COMMIT = 25cbd76
+# CREATED_UTC = 2026-06-06T05:39:56Z
+# GIT_COMMIT = c3a9e79
 
 [RUN]
 solver = Grad13Riemann2D
@@ -12,10 +12,10 @@ FullGridSize = 400
 refine = 1
 dt = 0.0001
 t = 0.3
-NVARS = 10
 
 [BINARY]
 BINARY_FILE = Grad13Riemann2D_nst400_Kn0p001_tAll.dat
+NVARS = 10
 ORDER = variable-fastest
 PRECISION = Float32
 ENDIAN = little

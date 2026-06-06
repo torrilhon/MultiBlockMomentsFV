@@ -20,8 +20,8 @@
 #   # FORMAT_VERSION = 1
 #   # CREATED_UTC = ... / GIT_COMMIT = ...
 #   [RUN]      solver=.. Kn=.. R13=.. Type=.. FullGridSize=.. refine=..
-#              dt=.. t=.. NVARS=12
-#   [BINARY]   BINARY_FILE=<name>.dat ORDER=variable-fastest
+#              dt=.. t=..
+#   [BINARY]   BINARY_FILE=<name>.dat NVARS=10 ORDER=variable-fastest
 #              PRECISION=Float32|Float64 ENDIAN=little
 #   [VARIABLES]
 #   rho vx vy T p Pxx Pxy Pyy qx qy        (10 PHYSICAL fields; x,y NOT stored)

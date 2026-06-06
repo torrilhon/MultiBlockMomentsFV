@@ -96,11 +96,11 @@ static void WriteManifest( FILE *fh, const char *datname, const char *solv,
   fprintf( fh, "FullGridSize = %d\n", gridSize );
   fprintf( fh, "refine = %d\n", Refine );
   fprintf( fh, "dt = %.10g\n", dt );
-  fprintf( fh, "t = %.10g\n", tEnd );
-  fprintf( fh, "NVARS = %d\n\n", NVARS_OUT );
+  fprintf( fh, "t = %.10g\n\n", tEnd );
 
   fprintf( fh, "[BINARY]\n" );
   fprintf( fh, "BINARY_FILE = %s\n", datname );
+  fprintf( fh, "NVARS = %d\n", NVARS_OUT );
   fprintf( fh, "ORDER = variable-fastest\n" );
   fprintf( fh, "PRECISION = %s\n", OutFloat32 ? "Float32" : "Float64" );
   fprintf( fh, "ENDIAN = little\n\n" );
