@@ -23,9 +23,11 @@
 
 double CFLreg = 0.95; // regulated CFL number (target)
 
-double TOut[21] = {0.0}; // the ACTUAL output times produced this run, starting with
-int    NTOut = 1;        // t=0 (the initial condition). Built in ParseHeader from the
-                         // resolved cadence/list and echoed in the output header.
+double TOut[21] = {0.0}; // resolved post-IC output times produced this run,
+                         // 0-terminated. Built in ParseHeader from dt_out/t_out,
+                         // driven by the evolution loop, and echoed in the header.
+                         // The t=0 initial condition is written separately and is
+                         // NOT part of this list.
 
 int Refine = 1;        // uniform grid refinement factor: multiplies nx,ny of every
                        // block. Set by 'refine' in the block file or the -refine CLI
@@ -52,10 +54,10 @@ int RefineCLI = 0;     // !=0 if -refine was given on the command line; then the
 //   dt_out = 0 : no intermediate cadence; output exactly at each listed t_out
 //                value. A single t_out therefore gives outputs at t=0 and t=t_out.
 //
-// Fills 'times' (0-terminated) with the post-IC output times and returns their
-// count.
+// Fills the global TOut[] (0-terminated) with the post-IC output times and
+// returns their count.
 //*********************************************************************************************
-static int ParseHeader( FILE *fp, double *times )
+static int ParseHeader( FILE *fp )
 {
   char tmp[300], key[64], val[200], *p;
   int i, n, n_times = 0, n_out = 0;
@@ -96,27 +98,20 @@ static int ParseHeader( FILE *fp, double *times )
     // equal cadence up to the FIRST t_out; shorten the last step onto t_out.
     double tfin = t_out[0];
     n = (int)((tfin + 1e-10)/dt_out);          // number of full dt_out steps
-    for( i=0; i<n; i++ ) times[i] = (i+1)*dt_out;
-    if( n*dt_out < tfin - 1e-10 ) times[n++] = tfin;  // partial final interval
-    times[n] = 0.0;
+    for( i=0; i<n; i++ ) TOut[i] = (i+1)*dt_out;
+    if( n*dt_out < tfin - 1e-10 ) TOut[n++] = tfin;  // partial final interval
+    TOut[n] = 0.0;
     n_times = n;
     printf( "   Output every dt_out = %g until t_end = %g (%d outputs)\n",
             dt_out, tfin, n_times );
   } else {
     // dt_out = 0: output exactly at each listed t_out value.
-    for( i=0; i<n_out; i++ ) times[i] = t_out[i];
-    times[n_out] = 0.0;
+    for( i=0; i<n_out; i++ ) TOut[i] = t_out[i];
+    TOut[n_out] = 0.0;
     n_times = n_out;
     printf( "   Output at t = " );
-    for( i=0; i<n_times; i++ ) printf( "%g%s", times[i], i<n_times-1?", ":"\n" );
+    for( i=0; i<n_times; i++ ) printf( "%g%s", TOut[i], i<n_times-1?", ":"\n" );
   };
-
-  // record the ACTUAL output times for the header: t=0 (the IC) followed by the
-  // resolved post-IC list above. This is the "what was run" provenance, so the
-  // cadence 'dt_out' need not be stored separately.
-  TOut[0] = 0.0;
-  for( i=0; i<n_times; i++ ) TOut[i+1] = times[i];
-  NTOut = n_times + 1;
 
   if( Refine < 1 ) Refine = 1;
   printf( "   Kn = %.4g, R13 = %g, F = %g, CFL = %.2f, limiter = %s, refine = %d\n",
@@ -128,9 +123,10 @@ static int ParseHeader( FILE *fp, double *times )
 
 //*********************************************************************************************
 // reads block informations from block file 'filename'
-// and returns a block list 'B' and output times 'times'
+// and returns a block list 'B'. The resolved output times are written to the
+// global TOut[] by ParseHeader.
 //*********************************************************************************************
-int SetBlocks( double *times, DB_Block *B, char *filename )
+int SetBlocks( DB_Block *B, char *filename )
 {
   double xmin, xmax, ymin, ymax;
   int n = 0, bMax=0, block_id, nx, ny, nst = 2*MBC, bound0, bound1, bound2, bound3;
@@ -142,7 +138,7 @@ int SetBlocks( double *times, DB_Block *B, char *filename )
   if( fp == NULL ) { perror(filename); return 0; }
 
   // ----- global header: 'key = value' lines until the 'Block data' marker -----
-  ParseHeader( fp, times );
+  ParseHeader( fp );
 
   // ----- per-block table (unchanged positional format) -----
   if( fgets(tmp,300,fp) == NULL ) { fclose(fp); fprintf(stderr,"Unexpected EOF before block definitions\n"); return 0; }

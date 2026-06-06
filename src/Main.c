@@ -56,14 +56,14 @@ void MakeDirs( const char *path )
 
 //*********************************************************************************************
 // main function reads command line parameters, initializes grid and 
-// calls 'Steps' to evolve to each requested output time (tOut[]) with
+// calls 'Steps' to evolve to each requested output time (global TOut[]) with
 // intermediate outputs; reads the block file for grid + output times.
 //*********************************************************************************************
 int main(int argc, const char **argv)
 {   
   int i, j, k = 1, m, n, nb, bMax, nMax, dst_idx;
   double CFLmax, t, tNext;
-  double U[N], tOut[20];
+  double U[N];
   char BlockFile[200] = "blockfile.txt", limname[64];
   DB_Block B[NB];
   DB_Range R;
@@ -92,7 +92,7 @@ int main(int argc, const char **argv)
   };
 
   // read parameters + grid from the block file (sets Kn, R13, F, CFLreg, Limiter)
-  bMax = SetBlocks( tOut, B, BlockFile );
+  bMax = SetBlocks( B, BlockFile );
 
   // command-line flags override the values read from the block file
   if (exists_argument(argc, argv, "-CFL"))
@@ -147,8 +147,8 @@ int main(int argc, const char **argv)
   nMax = 0;
   t = 0.0;
 
-  while( tOut[n] > 0 ) {
-    tNext = tOut[n];
+  while( TOut[n] > 0 ) {
+    tNext = TOut[n];
     nMax += Steps( B, bMax, &t, tNext, CFLmax, CFLreg ); 
     Output( B, bMax, nMax, t, nMax );
     n++;

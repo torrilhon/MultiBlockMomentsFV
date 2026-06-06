@@ -95,9 +95,10 @@ static void WriteManifest( FILE *fh, const char *datname, const char *solv,
   fprintf( fh, "Type = %s\n", Type );
   fprintf( fh, "FullGridSize = %d\n", gridSize );
   fprintf( fh, "refine = %d\n", Refine );
-  // the actual output times produced this run (TOut[0]=0 is the initial condition)
+  // the resolved post-IC output times produced this run (0-terminated; the
+  // t=0 initial condition is written separately and is not listed here)
   fprintf( fh, "t_out =" );
-  for( int k=0; k<NTOut; k++ ) fprintf( fh, " %.10g", TOut[k] );
+  for( int k=0; TOut[k] > 0; k++ ) fprintf( fh, " %.10g", TOut[k] );
   fprintf( fh, "\n\n" );
 
   fprintf( fh, "[BINARY]\n" );

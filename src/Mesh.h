@@ -7,10 +7,9 @@
 //*********************************************************************************************
 
 extern double CFLreg;   // regulated (target) CFL number
-extern double TOut[21]; // actual output times produced this run (TOut[0]=0 is the IC)
-extern int    NTOut;    // number of entries in TOut[]
+extern double TOut[21]; // resolved post-IC output times, 0-terminated (no t=0 entry)
 extern int    Refine;     // uniform grid refinement factor (block file / -refine)
 extern int    RefineCLI;  // set !=0 before SetBlocks to make -refine override the file
 
-int  SetBlocks( double *times, DB_Block *B, char *filename );
+int  SetBlocks( DB_Block *B, char *filename );
 void LoadData( DB_Block *B, int bMax, char *filename );
