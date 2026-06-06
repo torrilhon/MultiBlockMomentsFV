@@ -7,6 +7,8 @@
 //*********************************************************************************************
 
 extern double CFLreg;   // regulated (target) CFL number
+extern double TOut[21]; // actual output times produced this run (TOut[0]=0 is the IC)
+extern int    NTOut;    // number of entries in TOut[]
 extern int    Refine;     // uniform grid refinement factor (block file / -refine)
 extern int    RefineCLI;  // set !=0 before SetBlocks to make -refine override the file
 

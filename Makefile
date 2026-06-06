@@ -14,6 +14,11 @@ CC      := gcc
 CFLAGS  := -O3 -Wall
 LDFLAGS := -lm
 
+# short git commit hash baked in at compile time for output provenance
+# (falls back to "unknown" outside a git checkout)
+GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+CFLAGS += -DGIT_COMMIT=\"$(GIT_COMMIT)\"
+
 SRCDIR  := src
 BUILD   := build
 RUNS    := runs
@@ -29,9 +34,13 @@ CASE    ?= cases/squareSmall.txt
 # default case for `make check` (square4 = full standard reference run)
 CHECKCASE ?= cases/square4.txt
 CHECKNAME  = $(basename $(notdir $(CHECKCASE)))
-# tolerances for the numeric regression comparison
-ABSTOL  ?= 1e-10
-RELTOL  ?= 1e-8
+# tolerances for the numeric regression comparison. Output now defaults to
+# single precision (Float32, ~7 significant digits), so the regression gate is
+# loosened accordingly; compare_solution.py applies the same single-precision
+# defaults when these are left unset. Pass -double to the solver and tighten
+# these (e.g. ABSTOL=1e-10 RELTOL=1e-8) for a double-precision reference.
+ABSTOL  ?= 1e-6
+RELTOL  ?= 1e-5
 # strip directory + .txt extension -> name of the run/output subfolder
 CASENAME = $(basename $(notdir $(CASE)))
 
@@ -58,24 +67,24 @@ run: $(BIN)
 	./$(BIN) -bfile $(CASE) -out $(RUNS)/$(CASENAME) $(ARGS)
 
 # --------------------------------------------------------------------------
-# check: run CHECKCASE and compare its Tecplot output against reference/
-# numerically (tools/compare_solution.py). The comparison ignores physically
-# meaningless differences (signed zeros, whitespace, Tecplot STRANDID) and
-# fails on any value that exceeds the tolerance. This is a hard pass/fail gate.
+# check: run CHECKCASE and compare its binary output (.hdr/.dat) against
+# reference/ numerically (tools/compare_solution.py). The comparison ignores
+# physically meaningless metadata (STRANDID / provenance) and fails on any
+# value that exceeds the tolerance. This is a hard pass/fail gate.
 #
 #   make check                          # default: square4
 #   make check CHECKCASE=cases/squareSmall.txt   # quick smoke check
 #   make check ABSTOL=1e-8 RELTOL=1e-6           # loosen tolerances
 check: $(BIN)
 	@echo "== regression check on $(CHECKCASE) =="
-	@if [ ! -f $(REF)/$(CHECKNAME).ref.dat ]; then \
-	   echo "SKIP: no reference file $(REF)/$(CHECKNAME).ref.dat"; exit 0; \
+	@if [ ! -f $(REF)/$(CHECKNAME).ref.hdr ]; then \
+	   echo "SKIP: no reference file $(REF)/$(CHECKNAME).ref.hdr"; exit 0; \
 	 fi
 	@mkdir -p $(RUNS)/$(CHECKNAME)
 	./$(BIN) -bfile $(CHECKCASE) -out $(RUNS)/$(CHECKNAME)
-	@echo "-- compare vs $(REF)/$(CHECKNAME).ref.dat --"
+	@echo "-- compare vs $(REF)/$(CHECKNAME).ref.hdr --"
 	python3 tools/compare_solution.py \
-	   $(RUNS)/$(CHECKNAME)/*_tAll.dat $(REF)/$(CHECKNAME).ref.dat $(ABSTOL) $(RELTOL)
+	   $(RUNS)/$(CHECKNAME)/*_tAll.hdr $(REF)/$(CHECKNAME).ref $(ABSTOL) $(RELTOL)
 
 # --------------------------------------------------------------------------
 clean:

@@ -23,6 +23,11 @@
 #include "Mesh.h"
 #include "Output.h"
 
+// initial time-step guess used to start the adaptive CFL stepping (the actual
+// step is then CFL-controlled). This is NOT the output cadence -- that is the
+// block file's 'dt_out' key (the resolved output times are written to the header).
+#define DT_INITIAL 0.0001
+
 
 int Steps( DB_Block *B, int bMax, double *t, double tend, double CFLmax, double CFLreg );
 double TimeUpdate( DB_Block *B, int bMax, double dt, double t );
@@ -51,14 +56,14 @@ void MakeDirs( const char *path )
 
 //*********************************************************************************************
 // main function reads command line parameters, initializes grid and 
-// calls 'steps' for evolution until tend with intermediate outputs
-// reads blockfile for grid construction and output times.
+// calls 'Steps' to evolve to each requested output time (tOut[]) with
+// intermediate outputs; reads the block file for grid + output times.
 //*********************************************************************************************
 int main(int argc, const char **argv)
 {   
   int i, j, k = 1, m, n, nb, bMax, nMax, dst_idx;
-  double CFLmax, t, tend;
-  double U[N], OutTime[20];
+  double CFLmax, t, tNext;
+  double U[N], tOut[20];
   char BlockFile[200] = "blockfile.txt", limname[64];
   DB_Block B[NB];
   DB_Range R;
@@ -75,6 +80,9 @@ int main(int argc, const char **argv)
       MakeDirs( OutDir );  // create output dir (and parents) if missing
   };
 
+  // output precision: single (Float32) by default; -double writes Float64 .dat
+  if (exists_argument(argc, argv, "-double")) OutFloat32 = 0;
+
   // -refine must be set BEFORE the grid is built (SetBlocks consumes it); RefineCLI
   // makes it take precedence over the block file's 'refine' value.
   if (exists_argument(argc, argv, "-refine")) {
@@ -84,7 +92,7 @@ int main(int argc, const char **argv)
   };
 
   // read parameters + grid from the block file (sets Kn, R13, F, CFLreg, Limiter)
-  bMax = SetBlocks( OutTime, B, BlockFile );
+  bMax = SetBlocks( tOut, B, BlockFile );
 
   // command-line flags override the values read from the block file
   if (exists_argument(argc, argv, "-CFL"))
@@ -139,9 +147,9 @@ int main(int argc, const char **argv)
   nMax = 0;
   t = 0.0;
 
-  while( OutTime[n] > 0 ) {
-    tend = OutTime[n];
-    nMax += Steps( B, bMax, &t, tend, CFLmax, CFLreg ); 
+  while( tOut[n] > 0 ) {
+    tNext = tOut[n];
+    nMax += Steps( B, bMax, &t, tNext, CFLmax, CFLreg ); 
     Output( B, bMax, nMax, t, nMax );
     n++;
   };
@@ -183,7 +191,7 @@ int Steps( DB_Block *B, int bMax, double *t, double tend, double CFLmax, double 
 {
   int dst_idx, nStep = 0, nRej = 0, showEvery = 1, m, nb;
   int gridsize = FullGridSize(B,bMax), minutes = 0, seconds = 0;
-  double CFL, dt = 0.0001, perfidx = 0.0, diff = 0.0;
+  double CFL, dt = DT_INITIAL, perfidx = 0.0, diff = 0.0;
   
   gettimeofday(&time0,NULL);
   while( *t < tend ) {

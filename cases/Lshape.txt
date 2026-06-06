@@ -5,8 +5,8 @@ Kn      = 0.001
 R13     = 0
 CFL     = 0.95
 limiter = harmonic
-dt      = 0.05      # fixed output cadence ...
-tend    = 0.6       # ... until this end time
+dt_out  = 0.05      # output cadence (equal intervals up to t_out; 0 = output only at t_out)
+t_out   = 0.6       # requested output time(s)
 refine  = 1         # uniform grid refinement factor (multiplies nx,ny of every block)
 
 Block data (Maximal NB blocks!):
