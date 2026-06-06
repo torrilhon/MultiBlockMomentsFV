@@ -198,6 +198,8 @@ void LoadData( DB_Block *B, int bMax, char *filename )
   size_t len;
   FILE *fh, *fd;
 
+  // fallback only; the real scenario Type is recovered from the manifest below
+  // so a restarted run's output reuses the original scenario name.
   sprintf( Type, "FromFile(%s)", filename );
 
   // resolve companion paths from .hdr / .dat / bare basename
@@ -227,6 +229,9 @@ void LoadData( DB_Block *B, int bMax, char *filename )
       single = (strstr(q, "Float32") != NULL);
       continue;
     }
+    // recover the scenario name written in the [RUN] section ('Type = ...')
+    if( strncmp(line, "Type", 4) == 0 && (q = strchr(line, '=')) != NULL )
+      { sscanf( q+1, " %199[^\n]", Type ); continue; }
     if( strncmp(line, "ZONE", 4) != 0 ) continue;
 
     zoff = 0;
