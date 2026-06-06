@@ -7,7 +7,7 @@
 
 #define N 9   // number of variables, i.e., equations
 
-#define NB 10  // maximum number of grid blocks
+#define NB 32  // maximum number of grid blocks
 #define MBC 3  // number of ghost cells
 
 // (slope-limiter variants LIM_* are defined in Limiter.h)

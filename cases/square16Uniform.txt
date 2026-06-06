@@ -1,0 +1,31 @@
+# square16Uniform -- 16-block (4x4) uniform square domain
+# 4x4 refinement of square4Uniform on the same [-1,1]x[-1,1] domain; useful for
+# exercising the OpenMP block-level parallelism (16 blocks -> scales to 16 cores).
+# Global parameters (all optional; a CLI flag overrides the file value).
+#   limiter: none | average | minmod | superbee | harmonic
+Kn      = 0.001
+R13     = 0
+CFL     = 0.95
+limiter = harmonic
+dt_out  = 0.1       # output cadence (equal intervals up to t_list; 0 = output only at t_list)
+t_list   = 0.6       # requested output time; long enough the waves reach beyond the boundaries
+refine  = 1         # uniform grid refinement factor (multiplies nx,ny of every block)
+
+Block data (Maximal NB blocks!):
+number/xmin,xmax/ymin,ymax/nstx,nsty/leftbound,rightbound,bottombound,topbound/
+1/-1.0,-0.5/-1.0,-0.5/50,50/0,2,-1,5/
+2/-0.5,0.0/-1.0,-0.5/50,50/1,3,-1,6/
+3/0.0,0.5/-1.0,-0.5/50,50/2,4,-1,7/
+4/0.5,1.0/-1.0,-0.5/50,50/3,0,-1,8/
+5/-1.0,-0.5/-0.5,0.0/50,50/0,6,1,9/
+6/-0.5,0.0/-0.5,0.0/50,50/5,7,2,10/
+7/0.0,0.5/-0.5,0.0/50,50/6,8,3,11/
+8/0.5,1.0/-0.5,0.0/50,50/7,0,4,12/
+9/-1.0,-0.5/0.0,0.5/50,50/0,10,5,13/
+10/-0.5,0.0/0.0,0.5/50,50/9,11,6,14/
+11/0.0,0.5/0.0,0.5/50,50/10,12,7,15/
+12/0.5,1.0/0.0,0.5/50,50/11,0,8,16/
+13/-1.0,-0.5/0.5,1.0/50,50/0,14,9,-1/
+14/-0.5,0.0/0.5,1.0/50,50/13,15,10,-1/
+15/0.0,0.5/0.5,1.0/50,50/14,16,11,-1/
+16/0.5,1.0/0.5,1.0/50,50/15,0,12,-1/
