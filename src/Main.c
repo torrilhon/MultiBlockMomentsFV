@@ -25,7 +25,7 @@
 
 // initial time-step guess used to start the adaptive CFL stepping (the actual
 // step is then CFL-controlled). This is NOT the output cadence -- that is the
-// block file's 'dt_out' key, recorded as 'dt_out' in the output header.
+// block file's 'dt_out' key (the resolved output times are written to the header).
 #define DT_INITIAL 0.0001
 
 
@@ -139,11 +139,7 @@ int main(int argc, const char **argv)
   SetBoundary( B, bMax, L_DATA, 0.0 );
   printf( "    done\n" );
 
-  // final requested simulation time recorded in the header (largest tOut entry).
-  double tFinal = 0.0;
-  for( int io=0; tOut[io] > 0; io++ ) tFinal = tOut[io];
-
-  Output( B, bMax, 0, 0.0, tFinal, -1 );
+  Output( B, bMax, 0, 0.0, -1 );
   
   CFLmax = 1.0;
   
@@ -154,7 +150,7 @@ int main(int argc, const char **argv)
   while( tOut[n] > 0 ) {
     tNext = tOut[n];
     nMax += Steps( B, bMax, &t, tNext, CFLmax, CFLreg ); 
-    Output( B, bMax, nMax, t, tFinal, nMax );
+    Output( B, bMax, nMax, t, nMax );
     n++;
   };
 

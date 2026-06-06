@@ -23,8 +23,9 @@
 
 double CFLreg = 0.95; // regulated CFL number (target)
 
-double DtOut = 0.0;   // output cadence from the block file's 'dt_out' key; 0 = output
-                      // only at the listed 't_out' time(s). Recorded in the header.
+double TOut[21] = {0.0}; // the ACTUAL output times produced this run, starting with
+int    NTOut = 1;        // t=0 (the initial condition). Built in ParseHeader from the
+                         // resolved cadence/list and echoed in the output header.
 
 int Refine = 1;        // uniform grid refinement factor: multiplies nx,ny of every
                        // block. Set by 'refine' in the block file or the -refine CLI
@@ -76,7 +77,7 @@ static int ParseHeader( FILE *fp, double *times )
     else if( strcasecmp(key,"R13") == 0 ) R13    = atof(val);
     else if( strcasecmp(key,"F")   == 0 ) F      = atof(val);
     else if( strcasecmp(key,"CFL") == 0 ) CFLreg = atof(val);
-    else if( strcasecmp(key,"dt_out")== 0 ) dt_out = DtOut = atof(val);
+    else if( strcasecmp(key,"dt_out")== 0 ) dt_out = atof(val);
     else if( strcasecmp(key,"t_out")== 0 ) {
       char *q = val; double v;
       n_out = 0;
@@ -109,6 +110,14 @@ static int ParseHeader( FILE *fp, double *times )
     printf( "   Output at t = " );
     for( i=0; i<n_times; i++ ) printf( "%g%s", times[i], i<n_times-1?", ":"\n" );
   };
+
+  // record the ACTUAL output times for the header: t=0 (the IC) followed by the
+  // resolved post-IC list above. This is the "what was run" provenance, so the
+  // cadence 'dt_out' need not be stored separately.
+  TOut[0] = 0.0;
+  for( i=0; i<n_times; i++ ) TOut[i+1] = times[i];
+  NTOut = n_times + 1;
+
   if( Refine < 1 ) Refine = 1;
   printf( "   Kn = %.4g, R13 = %g, F = %g, CFL = %.2f, limiter = %s, refine = %d\n",
           Kn, R13, F, CFLreg, LimiterName(Limiter), Refine );

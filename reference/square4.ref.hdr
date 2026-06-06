@@ -1,7 +1,7 @@
 # MultiBlockMomentsFV binary output header
 # FORMAT_VERSION = 1
-# CREATED_UTC = 2026-06-06T05:57:50Z
-# GIT_COMMIT = 6130e0f
+# CREATED_UTC = 2026-06-06T06:30:29Z
+# GIT_COMMIT = d9ea81c
 
 [RUN]
 solver = Grad13Riemann2D
@@ -10,8 +10,7 @@ R13 = 0
 Type = Riemann2D
 FullGridSize = 22500
 refine = 1
-dt_out = 0.1
-t = 0.3
+t_out = 0 0.1 0.2 0.3
 
 [BINARY]
 BINARY_FILE = Grad13Riemann2D_nst22500_Kn0p001_tAll.dat

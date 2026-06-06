@@ -76,7 +76,7 @@ char *Convert( double a, char *s )
 // Called only when a fresh .hdr is created (Add <= 0).
 //*********************************************************************************************
 static void WriteManifest( FILE *fh, const char *datname, const char *solv,
-                           int gridSize, double tEnd )
+                           int gridSize )
 {
   char tbuf[64];
   time_t now = time(NULL);
@@ -95,8 +95,10 @@ static void WriteManifest( FILE *fh, const char *datname, const char *solv,
   fprintf( fh, "Type = %s\n", Type );
   fprintf( fh, "FullGridSize = %d\n", gridSize );
   fprintf( fh, "refine = %d\n", Refine );
-  fprintf( fh, "dt_out = %.10g\n", DtOut );
-  fprintf( fh, "t = %.10g\n\n", tEnd );
+  // the actual output times produced this run (TOut[0]=0 is the initial condition)
+  fprintf( fh, "t_out =" );
+  for( int k=0; k<NTOut; k++ ) fprintf( fh, " %.10g", TOut[k] );
+  fprintf( fh, "\n\n" );
 
   fprintf( fh, "[BINARY]\n" );
   fprintf( fh, "BINARY_FILE = %s\n", datname );
@@ -118,7 +120,7 @@ static void WriteManifest( FILE *fh, const char *datname, const char *solv,
 //*********************************************************************************************
 // writes binary output of the solution as a .hdr (ASCII manifest) + .dat (binary) pair.
 //*********************************************************************************************
-void Output( DB_Block *B, int bMax, int n, double t, double tEnd, int Add )
+void Output( DB_Block *B, int bMax, int n, double t, int Add )
 {
   extern char OutDir[200];   // output directory set via -out ("" = current dir)
   int i, j, nb, dst_idx, nGhost = 1, lineOut, ni, nj, i0, j0, p, v, m;
@@ -173,7 +175,7 @@ void Output( DB_Block *B, int bMax, int n, double t, double tEnd, int Add )
       if(fd) fclose(fd);
       free(base); free(hdrname); free(datname); return;
     };
-    WriteManifest( fh, datbase, solv, FullGridSize( B, bMax ), tEnd );
+    WriteManifest( fh, datbase, solv, FullGridSize( B, bMax ) );
   } else {                               // append a new time instance
     fh = fopen( hdrname, "a" );
     fd = fopen( datname, "ab" );
