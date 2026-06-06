@@ -20,7 +20,7 @@
 #   # FORMAT_VERSION = 1
 #   # CREATED_UTC = ... / GIT_COMMIT = ...
 #   [RUN]      solver=.. Kn=.. R13=.. Type=.. FullGridSize=.. refine=..
-#              t_list=t0 t1 ..   (the actual output times, t0=0 is the IC)
+#              t_output=0.0 t1 t2 ..   (the output times; 0.0 is the IC, then the post-IC times)
 #   [BINARY]   BINARY_FILE=<name>.dat NVARS=10 ORDER=variable-fastest
 #              PRECISION=Float32|Float64 ENDIAN=little
 #   [VARIABLES]

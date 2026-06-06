@@ -24,8 +24,7 @@
 #include "Output.h"
 
 // initial time-step guess used to start the adaptive CFL stepping (the actual
-// step is then CFL-controlled). This is NOT the output cadence -- that is the
-// block file's 'dt_out' key (the resolved output times are written to the header).
+// step is then CFL-controlled).
 #define DT_INITIAL 0.0001
 
 
