@@ -42,9 +42,6 @@
 #ifndef GIT_COMMIT
 #define GIT_COMMIT "unknown"
 #endif
-#ifndef GIT_DATE
-#define GIT_DATE "unknown"
-#endif
 
 #define NVARS_OUT 12               // x,y + 10 physical fields written per point
 #define FORMAT_VERSION 1
@@ -78,8 +75,7 @@ static void WriteManifest( FILE *fh, const char *datname, const char *solv,
   fprintf( fh, "# MultiBlockMomentsFV binary output header\n" );
   fprintf( fh, "# FORMAT_VERSION = %d\n", FORMAT_VERSION );
   fprintf( fh, "# CREATED_UTC = %s\n", tbuf );
-  fprintf( fh, "# GIT_COMMIT = %s\n", GIT_COMMIT );
-  fprintf( fh, "# GIT_DATE = %s\n\n", GIT_DATE );
+  fprintf( fh, "# GIT_COMMIT = %s\n\n", GIT_COMMIT );
 
   fprintf( fh, "[RUN]\n" );
   fprintf( fh, "solver = %s\n", solv );

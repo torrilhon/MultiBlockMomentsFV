@@ -18,7 +18,7 @@
 # .hdr structure:
 #   # MultiBlockMomentsFV binary output header
 #   # FORMAT_VERSION = 1
-#   # CREATED_UTC = ... / GIT_COMMIT = ... / GIT_DATE = ...
+#   # CREATED_UTC = ... / GIT_COMMIT = ...
 #   [RUN]      solver=.. Kn=.. R13=.. Type=.. FullGridSize=.. refine=..
 #              dt=.. t=.. NVARS=12
 #   [BINARY]   BINARY_FILE=<name>.dat ORDER=variable-fastest
