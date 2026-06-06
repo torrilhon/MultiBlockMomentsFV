@@ -1,6 +1,6 @@
 # load_solution.jl
 # ----------------------------------------------------------------------------
-# Loader and dense-output for the multi-block Tecplot ASCII (.dat) output of
+# Loader and dense-output for the multi-block BINARY (.hdr/.dat) output of
 # MultiBlockMomentsFV.
 #
 # Milestone 1: load the entire result (all blocks, all time instances) into a
@@ -9,20 +9,36 @@
 #              the relevant block and grid cell for the point (x,y), and
 #              interpolates both in time and in space.
 #
-# ---- Output file format (self-contained) ----------------------------------
-#   TITLE     = "..."
-#   VARIABLES = "x","y","rho",...            <- column names (x,y first)
-#   ZONE T="t = <t>, Block <n>", I=<ni>, J=<nj>, F=POINT, SOLUTIONTIME=<t>, STRANDID=<id>
-#   <ni*nj rows of POINT data, one column per variable>
+# ---- Output file format (two-file sidecar) ---------------------------------
+# Each run writes a pair of files sharing one basename:
+#
+#   <name>.hdr   pure ASCII run manifest (human-readable / greppable)
+#   <name>.dat   pure binary, contiguous Float64 payloads, no embedded text
+#
+# .hdr structure:
+#   # MultiBlockMomentsFV binary output header
+#   # FORMAT_VERSION = 1
+#   # CREATED_UTC = ... / GIT_COMMIT = ... / BINARY_FILE = <name>.dat
+#   [RUN]      solver=.. Kn=.. R13=.. Type=.. FullGridSize=.. NVARS=12
+#              ORDER=variable-fastest PRECISION=Float64 ENDIAN=little
+#   [VARIABLES]
+#   x y rho vx vy T p Pxx Pxy Pyy qx qy
+#   [ZONES]
+#   ZONE block=<n> I=<ni> J=<nj> NVARS=12 SOLUTIONTIME=<t> STRANDID=<id> OFFSET=<o> NBYTES=<b>
 #   ZONE ...
 #
-#   * Each ZONE is one (time, block) pair.  F=POINT => one row per cell centre.
+#   * Each ZONE is one (time, block) pair.
 #   * STRANDID groups all blocks belonging to the *same* output time instance.
 #   * Each block carries ONE layer of ghost cells on every side, so for an
 #     interior grid of nstx x nsty cells the zone has  I = nsty+2,  J = nstx+2.
-#   * POINT ordering: the I-index (y-direction) runs fastest, the J-index
-#     (x-direction) runs slowest.  Coordinates are cell *centres*, so the first
-#     centre sits at xmin - h/2 (the ghost) and the last at xmax + h/2.
+#   * I = points in y-direction (fastest), J = points in x-direction (slowest).
+#   * OFFSET/NBYTES locate the zone payload inside the .dat file, so the reader
+#     seeks directly to any block of any time with no scanning.
+#   * Payload is VARIABLE-FASTEST: for each point the 12 variables are stored
+#     contiguously, points ordered x-slowest / y-fastest (matching I,J above).
+#     A zone thus reads as reshape(read, NVARS, I*J): columns = points.
+#     Coordinates are cell *centres*; the first centre sits at xmin - h/2 (the
+#     ghost) and the last at xmax + h/2.
 #
 # Because the blocks have different grid sizes, the result is stored ragged
 # (one array per block) rather than as one padded dense array; the conceptual
@@ -111,35 +127,65 @@ struct Zone
     strandid::Int
     I::Int            # points in y-direction (fastest index)
     J::Int            # points in x-direction (slowest index)
-    data_start::Int   # line index of first data row
+    nvars::Int        # variables per point in this zone
+    offset::Int       # byte offset of the payload inside the .dat file
+    nbytes::Int       # payload byte count
 end
 
+# Parse the [VARIABLES] section and a TITLE-like label from the .hdr manifest.
+# The manifest has no TITLE field; we synthesise one from the solver/Type lines.
 function _parse_header(lines)
-    title = "Unknown"
-    m = match(r"TITLE\s*=\s*\"([^\"]*)\"", lines[1])
-    m !== nothing && (title = m.captures[1])
-    vnames = String[mm.captures[1] for mm in eachmatch(r"\"([^\"]+)\"", lines[2])]
+    title  = "Unknown"
+    solver = ""; typ = ""
+    vnames = String[]
+    invars = false
+    for ln in lines
+        s = strip(ln)
+        isempty(s) && continue
+        if startswith(s, "[VARIABLES]")
+            invars = true; continue
+        elseif startswith(s, "[")
+            invars = false
+        end
+        if invars && !startswith(s, "#")
+            append!(vnames, split(s))
+            invars = false        # single variable line
+        end
+        m = match(r"^solver\s*=\s*(\S+)", s); m !== nothing && (solver = m.captures[1])
+        m = match(r"^Type\s*=\s*(\S+)",   s); m !== nothing && (typ    = m.captures[1])
+    end
+    if !isempty(solver)
+        title = isempty(typ) ? solver : "$solver ($typ)"
+    end
     return title, vnames
 end
 
+# Parse the per-zone records from the [ZONES] section.
 function _parse_zones(lines)
     zones = Zone[]
-    for (i, line) in enumerate(lines)
-        startswith(line, "ZONE") || continue
-        bm = match(r"Block\s+(\d+)", line)
-        Im = match(r"\bI\s*=\s*(\d+)", line)
-        Jm = match(r"\bJ\s*=\s*(\d+)", line)
+    geti(line, key) = (m = match(Regex("\\b$key\\s*=\\s*(-?\\d+)"), line);
+                       m === nothing ? 0 : parse(Int, m.captures[1]))
+    for line in lines
+        startswith(strip(line), "ZONE") || continue
         tm = match(r"SOLUTIONTIME\s*=\s*([0-9Ee+\-.]+)", line)
-        sm = match(r"STRANDID\s*=\s*(\d+)", line)
         push!(zones, Zone(
-            bm === nothing ? 0   : parse(Int, bm.captures[1]),
+            geti(line, "block"),
             tm === nothing ? 0.0 : parse(Float64, tm.captures[1]),
-            sm === nothing ? 0   : parse(Int, sm.captures[1]),
-            Im === nothing ? 0   : parse(Int, Im.captures[1]),
-            Jm === nothing ? 0   : parse(Int, Jm.captures[1]),
-            i + 1))
+            geti(line, "STRANDID"),
+            geti(line, "I"),
+            geti(line, "J"),
+            geti(line, "NVARS"),
+            geti(line, "OFFSET"),
+            geti(line, "NBYTES")))
     end
     return zones
+end
+
+# Resolve the .dat companion path from a given path (accepts .hdr, .dat, or base).
+function _companion_paths(path::AbstractString)
+    base = endswith(path, ".hdr") || endswith(path, ".dat") ?
+           path[1:end-4] : path
+    return base * ".hdr", base * ".dat"
 end
 
 # ----------------------------------------------------------------------------
@@ -148,16 +194,23 @@ end
 """
     load_solution(path) -> SolutionData
 
-Read a complete `*.dat` output file (all blocks, all times) into a
-`SolutionData`. The file is self-contained, so no input `.txt` is needed.
+Read a complete binary output result (all blocks, all times) into a
+`SolutionData`. `path` may be the `.hdr`, the `.dat`, or the shared basename;
+the companion file is located automatically. Metadata comes from the `.hdr`
+manifest and the heavy field data is read directly from the binary `.dat`
+using the per-zone byte offsets, so no scanning of the payload is needed.
 """
 function load_solution(path::AbstractString)
-    lines = readlines(path)
+    hdrpath, datpath = _companion_paths(path)
+    isfile(hdrpath) || error("header file not found: $hdrpath")
+    isfile(datpath) || error("binary file not found: $datpath")
+
+    lines = readlines(hdrpath)
     title, vnames = _parse_header(lines)
     nvar = length(vnames)
 
     zones = _parse_zones(lines)
-    isempty(zones) && error("No ZONE records found in $path")
+    isempty(zones) && error("No ZONE records found in $hdrpath")
 
     # Time instances, grouped by STRANDID, in order of first appearance.
     strand_order = Int[]
@@ -198,23 +251,29 @@ function load_solution(path::AbstractString)
     ix_col = findfirst(==("x"), vnames); ix_col === nothing && (ix_col = 1)
     iy_col = findfirst(==("y"), vnames); iy_col === nothing && (iy_col = 2)
 
-    for s in strand_order, b in blockids
-        z  = zmap[(s, b)]
-        it = sidx[s]; k = bidx[b]
-        ni = z.I; nj = z.J            # ni = y-pts (fast), nj = x-pts (slow)
-        arr = blocks[it][k]
-        row = z.data_start
-        @inbounds for jx in 1:nj
-            for iy in 1:ni
-                vals = parse.(Float64, split(lines[row]))
+    # Read the binary payloads. Each zone's payload is VARIABLE-FASTEST with
+    # points ordered x-slowest (jx) / y-fastest (iy), so reshaping the flat
+    # Float64 stream to (nvar, ni, nj) gives [v, iy, jx]; we transpose into the
+    # block layout [jx, iy, v] expected by the rest of the module.
+    open(datpath, "r") do io
+        for s in strand_order, b in blockids
+            z  = zmap[(s, b)]
+            it = sidx[s]; k = bidx[b]
+            ni = z.I; nj = z.J            # ni = y-pts (fast), nj = x-pts (slow)
+            nv = z.nvars == 0 ? nvar : z.nvars
+            arr = blocks[it][k]
+            seek(io, z.offset)
+            raw = Vector{Float64}(undef, nv * ni * nj)
+            read!(io, raw)
+            flat = reshape(raw, nv, ni, nj)   # [v, iy, jx]
+            @inbounds for jx in 1:nj, iy in 1:ni
                 for v in 1:nvar
-                    arr[jx, iy, v] = vals[v]
+                    arr[jx, iy, v] = flat[v, iy, jx]
                 end
                 if it == 1
-                    iy == 1 && (xc[k][jx] = vals[ix_col])
-                    jx == 1 && (yc[k][iy] = vals[iy_col])
+                    iy == 1 && (xc[k][jx] = flat[ix_col, iy, jx])
+                    jx == 1 && (yc[k][iy] = flat[iy_col, iy, jx])
                 end
-                row += 1
             end
         end
     end
