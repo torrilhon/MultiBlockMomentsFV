@@ -24,7 +24,7 @@
 double CFLreg = 0.95; // regulated CFL number (target)
 
 double TOut[21] = {0.0}; // resolved post-IC output times produced this run,
-                         // 0-terminated. Built in ParseHeader from dt_out/t_out,
+                         // 0-terminated. Built in ParseHeader from dt_out/t_list,
                          // driven by the evolution loop, and echoed in the header.
                          // The t=0 initial condition is written separately and is
                          // NOT part of this list.
@@ -42,17 +42,17 @@ int RefineCLI = 0;     // !=0 if -refine was given on the command line; then the
 // missing keys keep their built-in defaults; a CLI flag overrides the file value):
 //   Kn, R13, F, CFL          -- physics / numerics scalars
 //   limiter                  -- none | average | minmod | superbee | harmonic
-//   t_out = t1 [t2 ...]      -- requested output time(s); single value or a list
+//   t_list = t1 [t2 ...]      -- requested output time(s); single value or a list
 //   dt_out                   -- output cadence (see below)
 //   refine                   -- uniform grid refinement factor (default 1)
 //
 // Output-time semantics (the t=0 initial condition is always written separately):
-//   dt_out > 0 : equal intervals of dt_out up to the FIRST t_out value; any
-//                further t_out entries are ignored. If t_out/dt_out is non-integer
+//   dt_out > 0 : equal intervals of dt_out up to the FIRST t_list value; any
+//                further t_list entries are ignored. If t_list/dt_out is non-integer
 //                the last interval is shortened so the final output lands
-//                exactly on t_out. (-> outputs dt_out, 2dt_out, ..., t_out)
-//   dt_out = 0 : no intermediate cadence; output exactly at each listed t_out
-//                value. A single t_out therefore gives outputs at t=0 and t=t_out.
+//                exactly on t_list. (-> outputs dt_out, 2dt_out, ..., t_list)
+//   dt_out = 0 : no intermediate cadence; output exactly at each listed t_list
+//                value. A single t_list therefore gives outputs at t=0 and t=t_list.
 //
 // Fills the global TOut[] (0-terminated) with the post-IC output times and
 // returns their count.
@@ -61,7 +61,7 @@ static int ParseHeader( FILE *fp )
 {
   char tmp[300], key[64], val[200], *p;
   int i, n, n_times = 0, n_out = 0;
-  double dt_out = 0.0, t_out[20] = {0.0};
+  double dt_out = 0.0, t_list[20] = {0.0};
 
   printf( "\n   Reading parameters...\n" );
   while( fgets(tmp,300,fp) != NULL ) {
@@ -80,11 +80,11 @@ static int ParseHeader( FILE *fp )
     else if( strcasecmp(key,"F")   == 0 ) F      = atof(val);
     else if( strcasecmp(key,"CFL") == 0 ) CFLreg = atof(val);
     else if( strcasecmp(key,"dt_out")== 0 ) dt_out = atof(val);
-    else if( strcasecmp(key,"t_out")== 0 ) {
+    else if( strcasecmp(key,"t_list")== 0 ) {
       char *q = val; double v;
       n_out = 0;
-      while( n_out < 19 && (v = strtod(q,&p)) != 0.0 && p != q ) { t_out[n_out++] = v; q = p; }
-      t_out[n_out] = 0.0;
+      while( n_out < 19 && (v = strtod(q,&p)) != 0.0 && p != q ) { t_list[n_out++] = v; q = p; }
+      t_list[n_out] = 0.0;
     }
     else if( strcasecmp(key,"refine")== 0 ) { if( !RefineCLI ) Refine = atoi(val); }
     else if( strcasecmp(key,"limiter") == 0 ) {
@@ -93,10 +93,10 @@ static int ParseHeader( FILE *fp )
     else fprintf( stderr, "   WARNING: unknown parameter '%s' ignored.\n", key );
   };
 
-  // build the post-IC output-time list from dt_out + t_out(list).
+  // build the post-IC output-time list from dt_out + t_list(list).
   if( dt_out > 0.0 ) {
-    // equal cadence up to the FIRST t_out; shorten the last step onto t_out.
-    double tfin = t_out[0];
+    // equal cadence up to the FIRST t_list; shorten the last step onto t_list.
+    double tfin = t_list[0];
     n = (int)((tfin + 1e-10)/dt_out);          // number of full dt_out steps
     for( i=0; i<n; i++ ) TOut[i] = (i+1)*dt_out;
     if( n*dt_out < tfin - 1e-10 ) TOut[n++] = tfin;  // partial final interval
@@ -105,8 +105,8 @@ static int ParseHeader( FILE *fp )
     printf( "   Output every dt_out = %g until t_end = %g (%d outputs)\n",
             dt_out, tfin, n_times );
   } else {
-    // dt_out = 0: output exactly at each listed t_out value.
-    for( i=0; i<n_out; i++ ) TOut[i] = t_out[i];
+    // dt_out = 0: output exactly at each listed t_list value.
+    for( i=0; i<n_out; i++ ) TOut[i] = t_list[i];
     TOut[n_out] = 0.0;
     n_times = n_out;
     printf( "   Output at t = " );

@@ -10,7 +10,7 @@ R13 = 0
 Type = Riemann2D
 FullGridSize = 22500
 refine = 1
-t_out = 0 0.1 0.2 0.3
+t_output = 0.0 0.1 0.2 0.3
 
 [BINARY]
 BINARY_FILE = Grad13Riemann2D_nst22500_Kn0p001_tAll.dat

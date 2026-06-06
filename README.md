@@ -86,10 +86,10 @@ Kn      = 0.001
 R13     = 0
 CFL     = 0.95
 limiter = harmonic      # none | average | minmod | superbee | harmonic
-dt_out  = 0.05          # output cadence: equal intervals up to t_out ...
-t_out   = 0.3           # ... up to this output time
-#dt_out = 0             # 0 = no cadence: output exactly at the t_out time(s) below
-#t_out  = 0.1 0.2 0.3   # with dt_out = 0, output at each of these times
+dt_out  = 0.05          # output cadence: equal intervals up to t_list ...
+t_list   = 0.3           # ... up to this output time
+#dt_out = 0             # 0 = no cadence: output exactly at the t_list time(s) below
+#t_list  = 0.1 0.2 0.3   # with dt_out = 0, output at each of these times
 
 Block data (Maximal NB blocks!):
 number/xmin,xmax/ymin,ymax/nstx,nsty/leftbound,rightbound,bottombound,topbound/
@@ -97,14 +97,14 @@ number/xmin,xmax/ymin,ymax/nstx,nsty/leftbound,rightbound,bottombound,topbound/
 ...
 ```
 
-- **Output times:** controlled by `dt_out` together with `t_out` (the t=0 initial
+- **Output times:** controlled by `dt_out` together with `t_list` (the t=0 initial
   condition is always written):
-  - `dt_out > 0` — equal intervals of `dt_out` up to the **first** `t_out` value;
-    any further `t_out` entries are ignored. If `t_out/dt_out` is non-integer the
-    last interval is shortened so the final output lands exactly on `t_out`.
-  - `dt_out = 0` — no cadence; output exactly at each time listed in `t_out`
-    (so a single `t_out` gives outputs at t=0 and t=t_out, and
-    `t_out = 0.1 0.2 0.3` gives those three independent output times).
+  - `dt_out > 0` — equal intervals of `dt_out` up to the **first** `t_list` value;
+    any further `t_list` entries are ignored. If `t_list/dt_out` is non-integer the
+    last interval is shortened so the final output lands exactly on `t_list`.
+  - `dt_out = 0` — no cadence; output exactly at each time listed in `t_list`
+    (so a single `t_list` gives outputs at t=0 and t=t_list, and
+    `t_list = 0.1 0.2 0.3` gives those three independent output times).
 - **`limiter`:** selects the reconstruction slope limiter — `none` (first order),
   `average` (unlimited central), `minmod`, `superbee`, or `harmonic` (van-Leer-type, default).
 - **Per-block line:** block number, x-range, y-range, cell counts `nstx,nsty`,

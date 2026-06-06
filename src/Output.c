@@ -96,8 +96,8 @@ static void WriteManifest( FILE *fh, const char *datname, const char *solv,
   fprintf( fh, "FullGridSize = %d\n", gridSize );
   fprintf( fh, "refine = %d\n", Refine );
   // the resolved post-IC output times produced this run (0-terminated; the
-  // t=0 initial condition is written separately and is not listed here)
-  fprintf( fh, "t_out =" );
+  // t=0 initial condition is always written)
+  fprintf( fh, "t_output = 0.0" );
   for( int k=0; TOut[k] > 0; k++ ) fprintf( fh, " %.10g", TOut[k] );
   fprintf( fh, "\n\n" );
 
