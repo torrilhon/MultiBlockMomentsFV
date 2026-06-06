@@ -7,14 +7,22 @@
 //                 resolved run parameters plus one ZONE record per (block,time)
 //                 carrying I, J, SOLUTIONTIME, STRANDID and the byte OFFSET/NBYTES
 //                 of that zone's payload inside the .dat file.
-//    <name>.dat   pure binary -- nothing but contiguous Float64 payloads for all
-//                 blocks and all appended times, concatenated back-to-back.
+//    <name>.dat   pure binary -- nothing but contiguous Float32 (default) or
+//                 Float64 payloads for all blocks and all appended times,
+//                 concatenated back-to-back.
+//
+//  The 2 grid coordinates x,y are NOT stored: the grids are uniform Cartesian,
+//  so the .hdr records each block's geometry (BX,BY,DX,DY,LFB_I,LFB_J,ISTART,
+//  JSTART) and the reader reconstructs coordinates exactly from GetPoint's
+//  linear map. Only the 10 physical fields are written per point.
 //
 //  Layout per zone (variable-fastest, Julia-friendly):
-//      x,y,rho,vx,vy,T,p,Pxx,Pxy,Pyy,qx,qy  for point 1,
-//      x,y,rho,...                           for point 2, ...
-//  so a zone reads back as  reshape(read!(io, Vector{Float64}(undef, NVARS*I*J)),
-//  NVARS, I*J)  with columns == points.
+//      rho,vx,vy,T,p,Pxx,Pxy,Pyy,qx,qy  for point 1,
+//      rho,vx,vy,...                     for point 2, ...
+//  so a zone reads back as  reshape(read!(io, Vector{T}(undef, NVARS*I*J)),
+//  NVARS, I*J)  with columns == points and T = Float32/Float64 per PRECISION.
+//
+//  Output precision defaults to Float32 (single); pass -double for Float64.
 //
 //  'Convert' formats a double into a compact filename token (e.g. 0.05 -> "0p05").
 //
@@ -43,8 +51,11 @@
 #define GIT_COMMIT "unknown"
 #endif
 
-#define NVARS_OUT 12               // x,y + 10 physical fields written per point
+#define NVARS_OUT 10               // 10 physical fields per point (x,y reconstructed)
 #define FORMAT_VERSION 1
+
+int OutFloat32 = 1;                 // 1 = single-precision output (default), 0 = double
+                                   // ('extern' in Output.h, set in Main from -double)
 
 char *Convert( double a, char *s )
 {
@@ -91,14 +102,16 @@ static void WriteManifest( FILE *fh, const char *datname, const char *solv,
   fprintf( fh, "[BINARY]\n" );
   fprintf( fh, "BINARY_FILE = %s\n", datname );
   fprintf( fh, "ORDER = variable-fastest\n" );
-  fprintf( fh, "PRECISION = Float64\n" );
+  fprintf( fh, "PRECISION = %s\n", OutFloat32 ? "Float32" : "Float64" );
   fprintf( fh, "ENDIAN = little\n\n" );
 
+  // x,y are reconstructed by the reader from the per-zone geometry (uniform
+  // Cartesian cell centres); only the 10 physical fields are stored in .dat.
   fprintf( fh, "[VARIABLES]\n" );
-  fprintf( fh, "x y rho vx vy T p Pxx Pxy Pyy qx qy\n\n" );
+  fprintf( fh, "rho vx vy T p Pxx Pxy Pyy qx qy\n\n" );
 
   fprintf( fh, "[ZONES]\n" );
-  fprintf( fh, "# block I J NVARS SOLUTIONTIME STRANDID OFFSET NBYTES\n" );
+  fprintf( fh, "# block I J NVARS BX BY DX DY LFB_I LFB_J ISTART JSTART NGHOST SOLUTIONTIME STRANDID OFFSET NBYTES\n" );
 };
 
 
@@ -108,16 +121,17 @@ static void WriteManifest( FILE *fh, const char *datname, const char *solv,
 void Output( DB_Block *B, int bMax, int n, double t, double dt, double tEnd, int Add )
 {
   extern char OutDir[200];   // output directory set via -out ("" = current dir)
-  int i, j, k = 1, nb, dst_idx, nGhost = 1, lineOut, ni, nj, p, v;
+  int i, j, nb, dst_idx, nGhost = 1, lineOut, ni, nj, i0, j0, p, v, m;
+  size_t elemSize = OutFloat32 ? sizeof(float) : sizeof(double);
   long offset;
   long long nbytes;
-  double Prim[N];
+  double Prim[N], vals[NVARS_OUT];
   char s1[20], s2[20], solv[1024], prefix[224];
   char *base = NULL, *hdrname = NULL, *datname = NULL;
   const char *datbase;            // .dat basename without directory, for the manifest
-  double *buf = NULL;
-  Vector P;
+  unsigned char *buf = NULL;      // raw staging buffer (Float32 or Float64 per OutFloat32)
   FILE *fh, *fd;
+  (void)n;
 
   // prepend output directory (with trailing slash) if -out was given
   if( strlen(OutDir) > 0 ) snprintf( prefix, sizeof prefix, "%s/", OutDir );
@@ -183,43 +197,60 @@ void Output( DB_Block *B, int bMax, int n, double t, double dt, double tEnd, int
     ni = B[nb].range.rbt.j - B[nb].range.lfb.j - 2*(MBC-nGhost) + 1;
     nj = B[nb].range.rbt.i - B[nb].range.lfb.i - 2*(MBC-nGhost) + 1;
 
-    nbytes = (long long)ni * nj * NVARS_OUT * (long long)sizeof(double);
+    // loop start indices (stored in the .hdr so the reader's coordinate
+    // reconstruction spans the identical i,j range as this write loop).
+    i0 = B[nb].range.lfb.i + MBC - nGhost;
+    j0 = B[nb].range.lfb.j + MBC - nGhost;
 
-    buf = malloc( (size_t)ni * nj * NVARS_OUT * sizeof(double) );
+    nbytes = (long long)ni * nj * NVARS_OUT * (long long)elemSize;
+
+    buf = malloc( (size_t)ni * nj * NVARS_OUT * elemSize );
     if( buf == NULL ) { perror("Output: malloc"); break; }
 
     // fill the contiguous, variable-fastest buffer in the SAME traversal order
-    // as the former POINT loop (i outer over x, j inner over y).
+    // as the former POINT loop (i outer over x, j inner over y). x,y are not
+    // stored -- only the 10 physical primitives, cast to the output precision.
     p = 0;
-    for( i=B[nb].range.lfb.i+MBC-nGhost; i<=B[nb].range.rbt.i-MBC+nGhost; i++ ) {
-      for( j=B[nb].range.lfb.j+MBC-nGhost; j<=B[nb].range.rbt.j-MBC+nGhost; j++ ) {
-        P = GetPoint(i,j,k,B[nb]);
+    for( i=i0; i<=B[nb].range.rbt.i-MBC+nGhost; i++ ) {
+      for( j=j0; j<=B[nb].range.rbt.j-MBC+nGhost; j++ ) {
         dst_idx = (j - B[nb].range.lfb.j)*lineOut + (i - B[nb].range.lfb.i);
         Primitive( B[nb].layer[L_DATA][dst_idx].U, Prim );
 
+        vals[0] = Prim[0];          // rho
+        vals[1] = Prim[1];          // vx
+        vals[2] = Prim[2];          // vy
+        vals[3] = Prim[3]/Prim[0];  // T
+        vals[4] = Prim[3];          // p
+        vals[5] = Prim[4];          // Pxx
+        vals[6] = Prim[5];          // Pxy
+        vals[7] = Prim[6];          // Pyy
+        vals[8] = Prim[7];          // qx
+        vals[9] = Prim[8];          // qy
+
         v = p*NVARS_OUT;
-        buf[v+0]  = P.x;
-        buf[v+1]  = P.y;
-        buf[v+2]  = Prim[0];          // rho
-        buf[v+3]  = Prim[1];          // vx
-        buf[v+4]  = Prim[2];          // vy
-        buf[v+5]  = Prim[3]/Prim[0];  // T
-        buf[v+6]  = Prim[3];          // p
-        buf[v+7]  = Prim[4];          // Pxx
-        buf[v+8]  = Prim[5];          // Pxy
-        buf[v+9]  = Prim[6];          // Pyy
-        buf[v+10] = Prim[7];          // qx
-        buf[v+11] = Prim[8];          // qy
+        if( OutFloat32 )
+          for( m=0; m<NVARS_OUT; m++ ) ((float  *)buf)[v+m] = (float)vals[m];
+        else
+          for( m=0; m<NVARS_OUT; m++ ) ((double *)buf)[v+m] = vals[m];
         p++;
       };
     };
 
     offset = ftell( fd );
-    fwrite( buf, sizeof(double), (size_t)ni * nj * NVARS_OUT, fd );
+    fwrite( buf, elemSize, (size_t)ni * nj * NVARS_OUT, fd );
     free( buf ); buf = NULL;
 
-    fprintf( fh, "ZONE block=%d I=%d J=%d NVARS=%d SOLUTIONTIME=%.16g STRANDID=%d OFFSET=%ld NBYTES=%lld\n",
-             nb+1, ni, nj, NVARS_OUT, t, Add+1, offset, nbytes );
+    // geometry (BX,BY,DX,DY,LFB_I,LFB_J,ISTART,JSTART,NGHOST) lets the reader
+    // rebuild x,y exactly: x = BX + (i-LFB_I)*DX, y = BY + (j-LFB_J)*DY.
+    fprintf( fh, "ZONE block=%d I=%d J=%d NVARS=%d "
+             "BX=%.16g BY=%.16g DX=%.16g DY=%.16g LFB_I=%d LFB_J=%d "
+             "ISTART=%d JSTART=%d NGHOST=%d "
+             "SOLUTIONTIME=%.16g STRANDID=%d OFFSET=%ld NBYTES=%lld\n",
+             nb+1, ni, nj, NVARS_OUT,
+             B[nb].x, B[nb].y, B[nb].dx, B[nb].dy,
+             B[nb].range.lfb.i, B[nb].range.lfb.j,
+             i0, j0, nGhost,
+             t, Add+1, offset, nbytes );
   };
 
   fclose( fh );

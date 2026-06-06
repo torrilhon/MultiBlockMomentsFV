@@ -3,7 +3,7 @@
 //
 //  SetBlocks   -- reads the self-describing block file (key=value header + block table)
 //  ParseHeader -- parses the 'key = value' header section (used by SetBlocks)
-//  LoadData    -- reloads a solution from a Tecplot output file for restarts
+//  LoadData    -- reloads a solution from a binary (.hdr/.dat) output for restarts
 //
 //  (c) Manuel Torrilhon, ETH Zurich, 2010 - RWTH Aachen 2026
 //*********************************************************************************************
@@ -161,51 +161,93 @@ int SetBlocks( double *times, DB_Block *B, char *filename )
 
 
 //*********************************************************************************************
-// this loads initial conditions from a single time output
-// file 'filename' in tecplot format according to the output function.
+// this loads initial conditions from a single-time binary output (.hdr/.dat)
+// pair, matching the layout written by Output(): per block one ZONE record in
+// the .hdr (with OFFSET into the .dat) and a variable-fastest payload of the 10
+// physical fields (rho vx vy T p Pxx Pxy Pyy qx qy) per point, stored Float32
+// (default) or Float64 (PRECISION field). x,y are not stored -- the cells are
+// filled in the same i-outer / j-inner traversal order as the writer, so no
+// coordinate reconstruction is needed for a restart. 'filename' may be the
+// .hdr, the .dat, or the shared basename.
 //*********************************************************************************************
 void LoadData( DB_Block *B, int bMax, char *filename )
 {
-  int i, j, nb, dst_idx, nGhost = 1;
-  double x, y, rho, vx, vy, p, theta, Pxx, Pxy, Pyy, qx, qy, Prim[N];
-  char tmp[500];
-  FILE *fp;
-    
+  int i, j, nb, dst_idx, nGhost = 1, m, single = 0;
+  long zoff;
+  double vals[10], Prim[N];
+  char base[500], hdrname[520], datname[520], line[600];
+  size_t len;
+  FILE *fh, *fd;
+
   sprintf( Type, "FromFile(%s)", filename );
 
-  printf( "\n   Read file: %s...", filename );
-  fp = fopen( filename, "r" );
-  if( fp == NULL ) { perror(filename); return; }
+  // resolve companion paths from .hdr / .dat / bare basename
+  strncpy( base, filename, sizeof base - 1 ); base[sizeof base - 1] = '\0';
+  len = strlen(base);
+  if( len > 4 && ( !strcmp(base+len-4, ".hdr") || !strcmp(base+len-4, ".dat") ) )
+    base[len-4] = '\0';
+  snprintf( hdrname, sizeof hdrname, "%s.hdr", base );
+  snprintf( datname, sizeof datname, "%s.dat", base );
 
-  if( fgets(tmp,300,fp) == NULL ) { fclose(fp); fprintf(stderr,"Unexpected EOF reading header\n"); return; }
-  if( fgets(tmp,300,fp) == NULL ) { fclose(fp); fprintf(stderr,"Unexpected EOF reading header\n"); return; }
-  
-  for( nb=0; nb<bMax; nb++ ) {
-    if( fgets(tmp,300,fp) == NULL ) { fclose(fp); fprintf(stderr,"Unexpected EOF reading block header\n"); return; }
+  printf( "\n   Read file: %s(.hdr/.dat)...", base );
+  fh = fopen( hdrname, "r" );
+  fd = fopen( datname, "rb" );
+  if( fh == NULL || fd == NULL ) {
+    perror( fh == NULL ? hdrname : datname );
+    if(fh) fclose(fh);
+    if(fd) fclose(fd);
+    return;
+  }
 
+  // scan the manifest: pick up PRECISION, then walk it block by block, taking
+  // the ZONE records in file order (one per block, matching the write loop).
+  nb = 0;
+  while( fgets(line, sizeof line, fh) != NULL && nb < bMax ) {
+    char *q;
+    if( (q = strstr(line, "PRECISION")) != NULL ) {
+      single = (strstr(q, "Float32") != NULL);
+      continue;
+    }
+    if( strncmp(line, "ZONE", 4) != 0 ) continue;
+
+    zoff = 0;
+    if( (q = strstr(line, "OFFSET=")) ) zoff = atol(q+7);
+    fseek( fd, zoff, SEEK_SET );
+
+    // points in the SAME i-outer (x) / j-inner (y) order the writer used.
     for( i=B[nb].range.lfb.i+MBC-nGhost; i<=B[nb].range.rbt.i-MBC+nGhost; i++ ) {
       for( j=B[nb].range.lfb.j+MBC-nGhost; j<=B[nb].range.rbt.j-MBC+nGhost; j++ ) {
-        if( fscanf( fp, " %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf", 
-                &x, &y, &rho, &vx, &vy, &p, &theta, &Pxx, &Pxy, &Pyy, &qx, &qy ) != 12 ) {
-          fclose(fp); fprintf(stderr,"Unexpected data format in %s\n", filename); return; }
-        if( fgets(tmp,100,fp) == NULL ) { fclose(fp); fprintf(stderr,"Unexpected EOF after data line\n"); return; }
+        if( single ) {
+          float f[10];
+          if( fread(f, sizeof(float), 10, fd) != 10 ) {
+            fclose(fh); fclose(fd);
+            fprintf(stderr,"Unexpected EOF in %s\n", datname); return; }
+          for( m=0; m<10; m++ ) vals[m] = (double)f[m];
+        } else {
+          if( fread(vals, sizeof(double), 10, fd) != 10 ) {
+            fclose(fh); fclose(fd);
+            fprintf(stderr,"Unexpected EOF in %s\n", datname); return; }
+        }
 
-        Prim[0] = rho;
-        Prim[1] = vx;
-        Prim[2] = vy;   
-        Prim[3] = p;   
-        Prim[4] = Pxx;
-        Prim[5] = Pxy;   
-        Prim[6] = Pyy;   
-        Prim[7] = qx;   
-        Prim[8] = qy;   
+        // stored physical order: rho vx vy T p Pxx Pxy Pyy qx qy (T redundant).
+        Prim[0] = vals[0];   // rho
+        Prim[1] = vals[1];   // vx
+        Prim[2] = vals[2];   // vy
+        Prim[3] = vals[4];   // p   (vals[3] = T = p/rho, recomputed implicitly)
+        Prim[4] = vals[5];   // Pxx
+        Prim[5] = vals[6];   // Pxy
+        Prim[6] = vals[7];   // Pyy
+        Prim[7] = vals[8];   // qx
+        Prim[8] = vals[9];   // qy
         dst_idx = DBR_Index(i, j, B[nb].range);
         Conservative( Prim, B[nb].layer[L_DATA][dst_idx].U );
-      };
-    };
-  };
+      }
+    }
+    nb++;
+  }
 
-  fclose( fp );
+  fclose( fh );
+  fclose( fd );
   printf( " done\n" );
 
 };

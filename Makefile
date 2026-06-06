@@ -34,9 +34,13 @@ CASE    ?= cases/squareSmall.txt
 # default case for `make check` (square4 = full standard reference run)
 CHECKCASE ?= cases/square4.txt
 CHECKNAME  = $(basename $(notdir $(CHECKCASE)))
-# tolerances for the numeric regression comparison
-ABSTOL  ?= 1e-10
-RELTOL  ?= 1e-8
+# tolerances for the numeric regression comparison. Output now defaults to
+# single precision (Float32, ~7 significant digits), so the regression gate is
+# loosened accordingly; compare_solution.py applies the same single-precision
+# defaults when these are left unset. Pass -double to the solver and tighten
+# these (e.g. ABSTOL=1e-10 RELTOL=1e-8) for a double-precision reference.
+ABSTOL  ?= 1e-6
+RELTOL  ?= 1e-5
 # strip directory + .txt extension -> name of the run/output subfolder
 CASENAME = $(basename $(notdir $(CASE)))
 

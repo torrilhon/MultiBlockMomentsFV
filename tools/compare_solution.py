@@ -10,7 +10,16 @@
 # metadata) that are not physically meaningful.
 # Exit code 0 = match (PASS), 1 = mismatch (FAIL).
 #
-# Defaults: abstol=1e-10, reltol=1e-8  (suitable for a deterministic build).
+# The .dat payload precision is read from the .hdr [BINARY] PRECISION field
+# (Float32 default, Float64 with -double). Each file is decoded at its own
+# precision and widened to Python float for the comparison, so a Float32 run can
+# be checked against a Float64 reference (or vice versa).
+#
+# Default tolerances adapt to the LOOSER of the two precisions: a Float32
+# payload only carries ~7 significant digits, so comparing it bit-for-bit
+# against a double reference is meaningless. Defaults:
+#   both Float64           -> abstol=1e-10, reltol=1e-8
+#   either side Float32    -> abstol=1e-6,  reltol=1e-5
 
 import sys
 import os
@@ -22,6 +31,16 @@ def companion(path):
     """Return (hdr, dat) paths from a .hdr, .dat, or bare basename."""
     base = path[:-4] if path.endswith((".hdr", ".dat")) else path
     return base + ".hdr", base + ".dat"
+
+
+def parse_precision(hdr):
+    """Return the payload precision ('Float32' or 'Float64') from the [BINARY]
+    PRECISION field. Defaults to Float64 for older headers without the field."""
+    for line in open(hdr):
+        m = re.match(r"\s*PRECISION\s*=\s*(\S+)", line)
+        if m:
+            return m.group(1)
+    return "Float64"
 
 
 def parse_zones(hdr):
@@ -39,10 +58,13 @@ def parse_zones(hdr):
 
 
 def load(path):
-    """Return (zone_keys, values) where zone_keys is a structure fingerprint
-    list (block,I,J,NVARS per zone, STRANDID-free) and values is a flat list of
-    floats over all zones in file order."""
+    """Return (zone_keys, values, precision) where zone_keys is a structure
+    fingerprint list (block,I,J,NVARS per zone, STRANDID-free) and values is a
+    flat list of floats (widened from the file precision) over all zones in file
+    order."""
     hdr, dat = companion(path)
+    prec = parse_precision(hdr)
+    code, esize = ("f", 4) if prec == "Float32" else ("d", 8)
     zones = parse_zones(hdr)
     keys = [(z["block"], z["I"], z["J"], z["nvars"]) for z in zones]
     values = []
@@ -50,8 +72,8 @@ def load(path):
         for z in zones:
             f.seek(z["offset"])
             n = z["nvars"] * z["I"] * z["J"]
-            values.extend(struct.unpack(f"<{n}d", f.read(z["nbytes"])))
-    return keys, values
+            values.extend(struct.unpack(f"<{n}{code}", f.read(n * esize)))
+    return keys, values, prec
 
 
 def main():
@@ -59,11 +81,14 @@ def main():
         print("usage: compare_solution.py <new> <reference> [abstol] [reltol]")
         return 2
     new, ref = sys.argv[1], sys.argv[2]
-    abstol = float(sys.argv[3]) if len(sys.argv) > 3 else 1e-10
-    reltol = float(sys.argv[4]) if len(sys.argv) > 4 else 1e-8
 
-    kn, dn = load(new)
-    kr, dr = load(ref)
+    kn, dn, pn = load(new)
+    kr, dr, pr = load(ref)
+
+    # Default tolerances follow the looser precision present on either side.
+    single = "Float32" in (pn, pr)
+    abstol = float(sys.argv[3]) if len(sys.argv) > 3 else (1e-6 if single else 1e-10)
+    reltol = float(sys.argv[4]) if len(sys.argv) > 4 else (1e-5 if single else 1e-8)
 
     if kn != kr:
         print(f"FAIL: zone structure differs ({len(kn)} vs {len(kr)} zones)")
@@ -89,7 +114,8 @@ def main():
             return 1
 
     print(f"PASS: {len(dn)} values match within tol "
-          f"(abstol={abstol:g}, reltol={reltol:g}); max |diff| = {max_abs:.3e}")
+          f"(abstol={abstol:g}, reltol={reltol:g}, precision new={pn}/ref={pr}); "
+          f"max |diff| = {max_abs:.3e}")
     if worst and max_abs > 0:
         i, x, y = worst
         print(f"      largest diff at index {i}: {x:.12g} vs {y:.12g}")

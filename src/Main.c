@@ -79,6 +79,9 @@ int main(int argc, const char **argv)
       MakeDirs( OutDir );  // create output dir (and parents) if missing
   };
 
+  // output precision: single (Float32) by default; -double writes Float64 .dat
+  if (exists_argument(argc, argv, "-double")) OutFloat32 = 0;
+
   // -refine must be set BEFORE the grid is built (SetBlocks consumes it); RefineCLI
   // makes it take precedence over the block file's 'refine' value.
   if (exists_argument(argc, argv, "-refine")) {

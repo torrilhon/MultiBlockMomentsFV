@@ -22,11 +22,13 @@
 #   [RUN]      solver=.. Kn=.. R13=.. Type=.. FullGridSize=.. refine=..
 #              dt=.. t=.. NVARS=12
 #   [BINARY]   BINARY_FILE=<name>.dat ORDER=variable-fastest
-#              PRECISION=Float64 ENDIAN=little
+#              PRECISION=Float32|Float64 ENDIAN=little
 #   [VARIABLES]
-#   x y rho vx vy T p Pxx Pxy Pyy qx qy
+#   rho vx vy T p Pxx Pxy Pyy qx qy        (10 PHYSICAL fields; x,y NOT stored)
 #   [ZONES]
-#   ZONE block=<n> I=<ni> J=<nj> NVARS=12 SOLUTIONTIME=<t> STRANDID=<id> OFFSET=<o> NBYTES=<b>
+#   ZONE block=<n> I=<ni> J=<nj> NVARS=10 BX=.. BY=.. DX=.. DY=.. LFB_I=..
+#        LFB_J=.. ISTART=.. JSTART=.. NGHOST=1 SOLUTIONTIME=<t> STRANDID=<id>
+#        OFFSET=<o> NBYTES=<b>
 #   ZONE ...
 #
 #   * Each ZONE is one (time, block) pair.
@@ -36,11 +38,18 @@
 #   * I = points in y-direction (fastest), J = points in x-direction (slowest).
 #   * OFFSET/NBYTES locate the zone payload inside the .dat file, so the reader
 #     seeks directly to any block of any time with no scanning.
-#   * Payload is VARIABLE-FASTEST: for each point the 12 variables are stored
-#     contiguously, points ordered x-slowest / y-fastest (matching I,J above).
+#   * Payload is VARIABLE-FASTEST: for each point the 10 PHYSICAL variables are
+#     stored contiguously, points ordered x-slowest / y-fastest (matching I,J).
 #     A zone thus reads as reshape(read, NVARS, I*J): columns = points.
-#     Coordinates are cell *centres*; the first centre sits at xmin - h/2 (the
-#     ghost) and the last at xmax + h/2.
+#   * Coordinates x,y are NOT stored. They are reconstructed on load from the
+#     per-zone uniform-grid geometry: for grid index (i along x, j along y),
+#       x = BX + (i - LFB_I)*DX,   y = BY + (j - LFB_J)*DY
+#     with i = ISTART + p÷I, j = JSTART + p%I for point p (0-based). These are
+#     cell *centres*; the first centre sits at xmin - h/2 (the ghost) and the
+#     last at xmax + h/2. Reconstructed x,y are prepended as columns 1,2 so the
+#     in-memory layout still exposes the full 12 columns x,y,<10 physical>.
+#   * Payload elements are Float32 or Float64 per PRECISION; they are read at
+#     the stored precision and widened to Float64 in memory.
 #
 # Because the blocks have different grid sizes, the result is stored ragged
 # (one array per block) rather than as one padded dense array; the conceptual
@@ -129,17 +138,25 @@ struct Zone
     strandid::Int
     I::Int            # points in y-direction (fastest index)
     J::Int            # points in x-direction (slowest index)
-    nvars::Int        # variables per point in this zone
+    nvars::Int        # physical variables per point stored in .dat (no x,y)
     offset::Int       # byte offset of the payload inside the .dat file
     nbytes::Int       # payload byte count
+    # block geometry for on-the-fly x,y reconstruction (uniform Cartesian):
+    #   x = BX + (i - LFB_I)*DX,  y = BY + (j - LFB_J)*DY
+    bx::Float64; by::Float64; dx::Float64; dy::Float64
+    lfb_i::Int; lfb_j::Int; istart::Int; jstart::Int
 end
 
-# Parse the [VARIABLES] section and a TITLE-like label from the .hdr manifest.
-# The manifest has no TITLE field; we synthesise one from the solver/Type lines.
+# Parse the [VARIABLES] section, the binary PRECISION, and a TITLE-like label
+# from the .hdr manifest. The manifest has no TITLE field; we synthesise one
+# from the solver/Type lines. PRECISION defaults to Float64 if absent (older
+# headers). Returned vnames always start with "x","y" (reconstructed) followed
+# by the physical fields stored in .dat.
 function _parse_header(lines)
     title  = "Unknown"
     solver = ""; typ = ""
-    vnames = String[]
+    fvars  = String[]
+    prec   = "Float64"
     invars = false
     for ln in lines
         s = strip(ln)
@@ -150,16 +167,20 @@ function _parse_header(lines)
             invars = false
         end
         if invars && !startswith(s, "#")
-            append!(vnames, split(s))
+            append!(fvars, split(s))
             invars = false        # single variable line
         end
-        m = match(r"^solver\s*=\s*(\S+)", s); m !== nothing && (solver = m.captures[1])
-        m = match(r"^Type\s*=\s*(\S+)",   s); m !== nothing && (typ    = m.captures[1])
+        m = match(r"^solver\s*=\s*(\S+)",    s); m !== nothing && (solver = m.captures[1])
+        m = match(r"^Type\s*=\s*(\S+)",      s); m !== nothing && (typ    = m.captures[1])
+        m = match(r"^PRECISION\s*=\s*(\S+)", s); m !== nothing && (prec   = m.captures[1])
     end
     if !isempty(solver)
         title = isempty(typ) ? solver : "$solver ($typ)"
     end
-    return title, vnames
+    # x,y are not stored; prepend them so downstream code sees the full 12 columns.
+    vnames = ("x" in fvars || "y" in fvars) ? fvars : vcat(["x", "y"], fvars)
+    eltyp = prec == "Float32" ? Float32 : Float64
+    return title, vnames, eltyp
 end
 
 # Parse the per-zone records from the [ZONES] section.
@@ -167,6 +188,8 @@ function _parse_zones(lines)
     zones = Zone[]
     geti(line, key) = (m = match(Regex("\\b$key\\s*=\\s*(-?\\d+)"), line);
                        m === nothing ? 0 : parse(Int, m.captures[1]))
+    getf(line, key) = (m = match(Regex("\\b$key\\s*=\\s*(-?[0-9.eE+]+)"), line);
+                       m === nothing ? 0.0 : parse(Float64, m.captures[1]))
     for line in lines
         startswith(strip(line), "ZONE") || continue
         tm = match(r"SOLUTIONTIME\s*=\s*([0-9Ee+\-.]+)", line)
@@ -178,7 +201,11 @@ function _parse_zones(lines)
             geti(line, "J"),
             geti(line, "NVARS"),
             geti(line, "OFFSET"),
-            geti(line, "NBYTES")))
+            geti(line, "NBYTES"),
+            getf(line, "BX"), getf(line, "BY"),
+            getf(line, "DX"), getf(line, "DY"),
+            geti(line, "LFB_I"), geti(line, "LFB_J"),
+            geti(line, "ISTART"), geti(line, "JSTART")))
     end
     return zones
 end
@@ -208,7 +235,7 @@ function load_solution(path::AbstractString)
     isfile(datpath) || error("binary file not found: $datpath")
 
     lines = readlines(hdrpath)
-    title, vnames = _parse_header(lines)
+    title, vnames, eltyp = _parse_header(lines)
     nvar = length(vnames)
 
     zones = _parse_zones(lines)
@@ -253,28 +280,35 @@ function load_solution(path::AbstractString)
     ix_col = findfirst(==("x"), vnames); ix_col === nothing && (ix_col = 1)
     iy_col = findfirst(==("y"), vnames); iy_col === nothing && (iy_col = 2)
 
-    # Read the binary payloads. Each zone's payload is VARIABLE-FASTEST with
-    # points ordered x-slowest (jx) / y-fastest (iy), so reshaping the flat
-    # Float64 stream to (nvar, ni, nj) gives [v, iy, jx]; we transpose into the
-    # block layout [jx, iy, v] expected by the rest of the module.
+    # Read the binary payloads. Each zone stores only the PHYSICAL fields (no
+    # x,y), VARIABLE-FASTEST, with points ordered x-slowest (jx) / y-fastest
+    # (iy). Reshaping the flat stream to (nvf, ni, nj) gives [v, iy, jx]. We
+    # widen to Float64, place the physical fields into columns 3.. and
+    # RECONSTRUCT x,y (columns 1,2) from the zone's uniform-grid geometry.
+    # Grid indices: along x  i = ISTART + (jx-1),  along y  j = JSTART + (iy-1)
+    #   x = BX + (i - LFB_I)*DX,   y = BY + (j - LFB_J)*DY.
     open(datpath, "r") do io
         for s in strand_order, b in blockids
             z  = zmap[(s, b)]
             it = sidx[s]; k = bidx[b]
             ni = z.I; nj = z.J            # ni = y-pts (fast), nj = x-pts (slow)
-            nv = z.nvars == 0 ? nvar : z.nvars
+            nvf = z.nvars == 0 ? nvar - 2 : z.nvars   # physical fields in .dat
             arr = blocks[it][k]
             seek(io, z.offset)
-            raw = Vector{Float64}(undef, nv * ni * nj)
+            raw = Vector{eltyp}(undef, nvf * ni * nj)
             read!(io, raw)
-            flat = reshape(raw, nv, ni, nj)   # [v, iy, jx]
+            flat = reshape(raw, nvf, ni, nj)          # [v, iy, jx]
             @inbounds for jx in 1:nj, iy in 1:ni
-                for v in 1:nvar
-                    arr[jx, iy, v] = flat[v, iy, jx]
+                xij = z.bx + ((z.istart + (jx-1)) - z.lfb_i) * z.dx
+                yij = z.by + ((z.jstart + (iy-1)) - z.lfb_j) * z.dy
+                arr[jx, iy, ix_col] = xij
+                arr[jx, iy, iy_col] = yij
+                for v in 1:nvf
+                    arr[jx, iy, 2 + v] = Float64(flat[v, iy, jx])
                 end
                 if it == 1
-                    iy == 1 && (xc[k][jx] = flat[ix_col, iy, jx])
-                    jx == 1 && (yc[k][iy] = flat[iy_col, iy, jx])
+                    iy == 1 && (xc[k][jx] = xij)
+                    jx == 1 && (yc[k][iy] = yij)
                 end
             end
         end
