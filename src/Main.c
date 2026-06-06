@@ -56,14 +56,14 @@ void MakeDirs( const char *path )
 
 //*********************************************************************************************
 // main function reads command line parameters, initializes grid and 
-// calls 'steps' for evolution until tend with intermediate outputs
-// reads blockfile for grid construction and output times.
+// calls 'Steps' to evolve to each requested output time (tOut[]) with
+// intermediate outputs; reads the block file for grid + output times.
 //*********************************************************************************************
 int main(int argc, const char **argv)
 {   
   int i, j, k = 1, m, n, nb, bMax, nMax, dst_idx;
-  double CFLmax, t, tend;
-  double U[N], OutTime[20];
+  double CFLmax, t, tNext;
+  double U[N], tOut[20];
   char BlockFile[200] = "blockfile.txt", limname[64];
   DB_Block B[NB];
   DB_Range R;
@@ -92,7 +92,7 @@ int main(int argc, const char **argv)
   };
 
   // read parameters + grid from the block file (sets Kn, R13, F, CFLreg, Limiter)
-  bMax = SetBlocks( OutTime, B, BlockFile );
+  bMax = SetBlocks( tOut, B, BlockFile );
 
   // command-line flags override the values read from the block file
   if (exists_argument(argc, argv, "-CFL"))
@@ -139,9 +139,9 @@ int main(int argc, const char **argv)
   SetBoundary( B, bMax, L_DATA, 0.0 );
   printf( "    done\n" );
 
-  // final requested simulation time recorded in the header (largest OutTime).
+  // final requested simulation time recorded in the header (largest tOut entry).
   double tFinal = 0.0;
-  for( int io=0; OutTime[io] > 0; io++ ) tFinal = OutTime[io];
+  for( int io=0; tOut[io] > 0; io++ ) tFinal = tOut[io];
 
   Output( B, bMax, 0, 0.0, tFinal, -1 );
   
@@ -151,9 +151,9 @@ int main(int argc, const char **argv)
   nMax = 0;
   t = 0.0;
 
-  while( OutTime[n] > 0 ) {
-    tend = OutTime[n];
-    nMax += Steps( B, bMax, &t, tend, CFLmax, CFLreg ); 
+  while( tOut[n] > 0 ) {
+    tNext = tOut[n];
+    nMax += Steps( B, bMax, &t, tNext, CFLmax, CFLreg ); 
     Output( B, bMax, nMax, t, tFinal, nMax );
     n++;
   };

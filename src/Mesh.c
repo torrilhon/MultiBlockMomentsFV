@@ -24,7 +24,7 @@
 double CFLreg = 0.95; // regulated CFL number (target)
 
 double DtOut = 0.0;   // output cadence from the block file's 'dt_out' key; 0 = output
-                      // only at the listed 'tend' time(s). Recorded in the header.
+                      // only at the listed 't_out' time(s). Recorded in the header.
 
 int Refine = 1;        // uniform grid refinement factor: multiplies nx,ny of every
                        // block. Set by 'refine' in the block file or the -refine CLI
@@ -39,17 +39,17 @@ int RefineCLI = 0;     // !=0 if -refine was given on the command line; then the
 // missing keys keep their built-in defaults; a CLI flag overrides the file value):
 //   Kn, R13, F, CFL          -- physics / numerics scalars
 //   limiter                  -- none | average | minmod | superbee | harmonic
-//   tend = t1 [t2 ...]        -- end time(s); may be a single value or a list
+//   t_out = t1 [t2 ...]      -- requested output time(s); single value or a list
 //   dt_out                   -- output cadence (see below)
 //   refine                   -- uniform grid refinement factor (default 1)
 //
 // Output-time semantics (the t=0 initial condition is always written separately):
-//   dt_out > 0 : equal intervals of dt_out up to the FIRST tend value; any
-//                further tend entries are ignored. If tend/dt_out is non-integer
+//   dt_out > 0 : equal intervals of dt_out up to the FIRST t_out value; any
+//                further t_out entries are ignored. If t_out/dt_out is non-integer
 //                the last interval is shortened so the final output lands
-//                exactly on tend. (-> outputs dt_out, 2dt_out, ..., tend)
-//   dt_out = 0 : no intermediate cadence; output exactly at each listed tend
-//                value. A single tend therefore gives outputs at t=0 and t=tend.
+//                exactly on t_out. (-> outputs dt_out, 2dt_out, ..., t_out)
+//   dt_out = 0 : no intermediate cadence; output exactly at each listed t_out
+//                value. A single t_out therefore gives outputs at t=0 and t=t_out.
 //
 // Fills 'times' (0-terminated) with the post-IC output times and returns their
 // count.
@@ -57,8 +57,8 @@ int RefineCLI = 0;     // !=0 if -refine was given on the command line; then the
 static int ParseHeader( FILE *fp, double *times )
 {
   char tmp[300], key[64], val[200], *p;
-  int i, n, n_times = 0, n_tend = 0;
-  double dt_out = 0.0, tend[20] = {0.0};
+  int i, n, n_times = 0, n_out = 0;
+  double dt_out = 0.0, t_out[20] = {0.0};
 
   printf( "\n   Reading parameters...\n" );
   while( fgets(tmp,300,fp) != NULL ) {
@@ -77,11 +77,11 @@ static int ParseHeader( FILE *fp, double *times )
     else if( strcasecmp(key,"F")   == 0 ) F      = atof(val);
     else if( strcasecmp(key,"CFL") == 0 ) CFLreg = atof(val);
     else if( strcasecmp(key,"dt_out")== 0 ) dt_out = DtOut = atof(val);
-    else if( strcasecmp(key,"tend")== 0 ) {
+    else if( strcasecmp(key,"t_out")== 0 ) {
       char *q = val; double v;
-      n_tend = 0;
-      while( n_tend < 19 && (v = strtod(q,&p)) != 0.0 && p != q ) { tend[n_tend++] = v; q = p; }
-      tend[n_tend] = 0.0;
+      n_out = 0;
+      while( n_out < 19 && (v = strtod(q,&p)) != 0.0 && p != q ) { t_out[n_out++] = v; q = p; }
+      t_out[n_out] = 0.0;
     }
     else if( strcasecmp(key,"refine")== 0 ) { if( !RefineCLI ) Refine = atoi(val); }
     else if( strcasecmp(key,"limiter") == 0 ) {
@@ -90,10 +90,10 @@ static int ParseHeader( FILE *fp, double *times )
     else fprintf( stderr, "   WARNING: unknown parameter '%s' ignored.\n", key );
   };
 
-  // build the post-IC output-time list from dt_out + tend(list).
+  // build the post-IC output-time list from dt_out + t_out(list).
   if( dt_out > 0.0 ) {
-    // equal cadence up to the FIRST tend; shorten the last step onto tend.
-    double tfin = tend[0];
+    // equal cadence up to the FIRST t_out; shorten the last step onto t_out.
+    double tfin = t_out[0];
     n = (int)((tfin + 1e-10)/dt_out);          // number of full dt_out steps
     for( i=0; i<n; i++ ) times[i] = (i+1)*dt_out;
     if( n*dt_out < tfin - 1e-10 ) times[n++] = tfin;  // partial final interval
@@ -102,10 +102,10 @@ static int ParseHeader( FILE *fp, double *times )
     printf( "   Output every dt_out = %g until t_end = %g (%d outputs)\n",
             dt_out, tfin, n_times );
   } else {
-    // dt_out = 0: output exactly at each listed tend value.
-    for( i=0; i<n_tend; i++ ) times[i] = tend[i];
-    times[n_tend] = 0.0;
-    n_times = n_tend;
+    // dt_out = 0: output exactly at each listed t_out value.
+    for( i=0; i<n_out; i++ ) times[i] = t_out[i];
+    times[n_out] = 0.0;
+    n_times = n_out;
     printf( "   Output at t = " );
     for( i=0; i<n_times; i++ ) printf( "%g%s", times[i], i<n_times-1?", ":"\n" );
   };

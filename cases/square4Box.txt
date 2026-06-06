@@ -8,8 +8,8 @@ Kn      = 0.001
 R13     = 0
 CFL     = 0.95
 limiter = harmonic
-dt_out      = 0.2
-tend    = 1.0       # long enough for the wave to hit all walls and reflect
+dt_out  = 0.2
+t_out   = 1.0       # long enough for the wave to hit all walls and reflect
 refine  = 1         # uniform grid refinement factor (multiplies nx,ny of every block)
 
 Block data (Maximal NB blocks!):
