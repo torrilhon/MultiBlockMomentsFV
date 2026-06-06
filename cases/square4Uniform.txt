@@ -5,7 +5,7 @@ Kn      = 0.001
 R13     = 0
 CFL     = 0.95
 limiter = harmonic
-dt      = 0.1       # fixed output cadence ...
+dt_out      = 0.1       # output cadence (equal intervals up to tend; 0 = output only at tend)
 tend    = 0.6       # ... until this end time the waves will reach beyond the boundaries
 refine  = 1         # uniform grid refinement factor (multiplies nx,ny of every block)
 

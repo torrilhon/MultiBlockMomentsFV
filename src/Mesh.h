@@ -7,6 +7,7 @@
 //*********************************************************************************************
 
 extern double CFLreg;   // regulated (target) CFL number
+extern double DtOut;    // output cadence ('dt_out' key); 0 = output only at 'tend' times
 extern int    Refine;     // uniform grid refinement factor (block file / -refine)
 extern int    RefineCLI;  // set !=0 before SetBlocks to make -refine override the file
 

@@ -23,8 +23,9 @@
 #include "Mesh.h"
 #include "Output.h"
 
-// initial time-step guess used to start the adaptive CFL stepping; also recorded
-// as the input value 'dt' in the output header.
+// initial time-step guess used to start the adaptive CFL stepping (the actual
+// step is then CFL-controlled). This is NOT the output cadence -- that is the
+// block file's 'dt_out' key, recorded as 'dt_out' in the output header.
 #define DT_INITIAL 0.0001
 
 
@@ -138,12 +139,11 @@ int main(int argc, const char **argv)
   SetBoundary( B, bMax, L_DATA, 0.0 );
   printf( "    done\n" );
 
-  // input information recorded in the output header: initial time step and the
-  // final requested simulation time (largest entry in OutTime).
-  double dt0 = DT_INITIAL, tFinal = 0.0;
+  // final requested simulation time recorded in the header (largest OutTime).
+  double tFinal = 0.0;
   for( int io=0; OutTime[io] > 0; io++ ) tFinal = OutTime[io];
 
-  Output( B, bMax, 0, 0.0, dt0, tFinal, -1 );
+  Output( B, bMax, 0, 0.0, tFinal, -1 );
   
   CFLmax = 1.0;
   
@@ -154,7 +154,7 @@ int main(int argc, const char **argv)
   while( OutTime[n] > 0 ) {
     tend = OutTime[n];
     nMax += Steps( B, bMax, &t, tend, CFLmax, CFLreg ); 
-    Output( B, bMax, nMax, t, dt0, tFinal, nMax );
+    Output( B, bMax, nMax, t, tFinal, nMax );
     n++;
   };
 

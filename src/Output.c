@@ -76,7 +76,7 @@ char *Convert( double a, char *s )
 // Called only when a fresh .hdr is created (Add <= 0).
 //*********************************************************************************************
 static void WriteManifest( FILE *fh, const char *datname, const char *solv,
-                           int gridSize, double dt, double tEnd )
+                           int gridSize, double tEnd )
 {
   char tbuf[64];
   time_t now = time(NULL);
@@ -95,7 +95,7 @@ static void WriteManifest( FILE *fh, const char *datname, const char *solv,
   fprintf( fh, "Type = %s\n", Type );
   fprintf( fh, "FullGridSize = %d\n", gridSize );
   fprintf( fh, "refine = %d\n", Refine );
-  fprintf( fh, "dt = %.10g\n", dt );
+  fprintf( fh, "dt_out = %.10g\n", DtOut );
   fprintf( fh, "t = %.10g\n\n", tEnd );
 
   fprintf( fh, "[BINARY]\n" );
@@ -118,7 +118,7 @@ static void WriteManifest( FILE *fh, const char *datname, const char *solv,
 //*********************************************************************************************
 // writes binary output of the solution as a .hdr (ASCII manifest) + .dat (binary) pair.
 //*********************************************************************************************
-void Output( DB_Block *B, int bMax, int n, double t, double dt, double tEnd, int Add )
+void Output( DB_Block *B, int bMax, int n, double t, double tEnd, int Add )
 {
   extern char OutDir[200];   // output directory set via -out ("" = current dir)
   int i, j, nb, dst_idx, nGhost = 1, lineOut, ni, nj, i0, j0, p, v, m;
@@ -173,7 +173,7 @@ void Output( DB_Block *B, int bMax, int n, double t, double dt, double tEnd, int
       if(fd) fclose(fd);
       free(base); free(hdrname); free(datname); return;
     };
-    WriteManifest( fh, datbase, solv, FullGridSize( B, bMax ), dt, tEnd );
+    WriteManifest( fh, datbase, solv, FullGridSize( B, bMax ), tEnd );
   } else {                               // append a new time instance
     fh = fopen( hdrname, "a" );
     fd = fopen( datname, "ab" );

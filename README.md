@@ -86,9 +86,10 @@ Kn      = 0.001
 R13     = 0
 CFL     = 0.95
 limiter = harmonic      # none | average | minmod | superbee | harmonic
-dt      = 0.05          # fixed output cadence ...
+dt_out  = 0.05          # output cadence: equal intervals up to tend ...
 tend    = 0.3           # ... until this end time
-#times  = 0.1 0.2 0.3   # alternative: explicit, increasing list of output times
+#dt_out = 0             # 0 = no cadence: output exactly at the tend time(s) below
+#tend   = 0.1 0.2 0.3   # with dt_out = 0, output at each of these times
 
 Block data (Maximal NB blocks!):
 number/xmin,xmax/ymin,ymax/nstx,nsty/leftbound,rightbound,bottombound,topbound/
@@ -96,8 +97,14 @@ number/xmin,xmax/ymin,ymax/nstx,nsty/leftbound,rightbound,bottombound,topbound/
 ...
 ```
 
-- **Output times:** give `dt` + `tend` for a fixed cadence (an output every `dt`
-  until `tend`), or an explicit increasing `times = t1 t2 ...` list.
+- **Output times:** controlled by `dt_out` together with `tend` (the t=0 initial
+  condition is always written):
+  - `dt_out > 0` — equal intervals of `dt_out` up to the **first** `tend` value;
+    any further `tend` entries are ignored. If `tend/dt_out` is non-integer the
+    last interval is shortened so the final output lands exactly on `tend`.
+  - `dt_out = 0` — no cadence; output exactly at each time listed in `tend`
+    (so a single `tend` gives outputs at t=0 and t=tend, and
+    `tend = 0.1 0.2 0.3` gives those three independent output times).
 - **`limiter`:** selects the reconstruction slope limiter — `none` (first order),
   `average` (unlimited central), `minmod`, `superbee`, or `harmonic` (van-Leer-type, default).
 - **Per-block line:** block number, x-range, y-range, cell counts `nstx,nsty`,
