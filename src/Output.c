@@ -36,10 +36,14 @@
 #include "tools.h"
 #include "Flux.h"
 #include "Scenario.h"   // Kn, R13, Type
+#include "Mesh.h"       // Refine
 #include "Output.h"
 
 #ifndef GIT_COMMIT
 #define GIT_COMMIT "unknown"
+#endif
+#ifndef GIT_DATE
+#define GIT_DATE "unknown"
 #endif
 
 #define NVARS_OUT 12               // x,y + 10 physical fields written per point
@@ -63,7 +67,8 @@ char *Convert( double a, char *s )
 // writes the ASCII manifest preamble (provenance + [RUN] + [VARIABLES] + [ZONES] tag).
 // Called only when a fresh .hdr is created (Add <= 0).
 //*********************************************************************************************
-static void WriteManifest( FILE *fh, const char *datname, const char *solv, int gridSize )
+static void WriteManifest( FILE *fh, const char *datname, const char *solv,
+                           int gridSize, double dt, double tEnd )
 {
   char tbuf[64];
   time_t now = time(NULL);
@@ -74,7 +79,7 @@ static void WriteManifest( FILE *fh, const char *datname, const char *solv, int 
   fprintf( fh, "# FORMAT_VERSION = %d\n", FORMAT_VERSION );
   fprintf( fh, "# CREATED_UTC = %s\n", tbuf );
   fprintf( fh, "# GIT_COMMIT = %s\n", GIT_COMMIT );
-  fprintf( fh, "# BINARY_FILE = %s\n\n", datname );
+  fprintf( fh, "# GIT_DATE = %s\n\n", GIT_DATE );
 
   fprintf( fh, "[RUN]\n" );
   fprintf( fh, "solver = %s\n", solv );
@@ -82,7 +87,13 @@ static void WriteManifest( FILE *fh, const char *datname, const char *solv, int 
   fprintf( fh, "R13 = %.10g\n", R13 );
   fprintf( fh, "Type = %s\n", Type );
   fprintf( fh, "FullGridSize = %d\n", gridSize );
-  fprintf( fh, "NVARS = %d\n", NVARS_OUT );
+  fprintf( fh, "refine = %d\n", Refine );
+  fprintf( fh, "dt = %.10g\n", dt );
+  fprintf( fh, "t = %.10g\n", tEnd );
+  fprintf( fh, "NVARS = %d\n\n", NVARS_OUT );
+
+  fprintf( fh, "[BINARY]\n" );
+  fprintf( fh, "BINARY_FILE = %s\n", datname );
   fprintf( fh, "ORDER = variable-fastest\n" );
   fprintf( fh, "PRECISION = Float64\n" );
   fprintf( fh, "ENDIAN = little\n\n" );
@@ -98,7 +109,7 @@ static void WriteManifest( FILE *fh, const char *datname, const char *solv, int 
 //*********************************************************************************************
 // writes binary output of the solution as a .hdr (ASCII manifest) + .dat (binary) pair.
 //*********************************************************************************************
-void Output( DB_Block *B, int bMax, int n, double t, int Add )
+void Output( DB_Block *B, int bMax, int n, double t, double dt, double tEnd, int Add )
 {
   extern char OutDir[200];   // output directory set via -out ("" = current dir)
   int i, j, k = 1, nb, dst_idx, nGhost = 1, lineOut, ni, nj, p, v;
@@ -152,7 +163,7 @@ void Output( DB_Block *B, int bMax, int n, double t, int Add )
       if(fd) fclose(fd);
       free(base); free(hdrname); free(datname); return;
     };
-    WriteManifest( fh, datbase, solv, FullGridSize( B, bMax ) );
+    WriteManifest( fh, datbase, solv, FullGridSize( B, bMax ), dt, tEnd );
   } else {                               // append a new time instance
     fh = fopen( hdrname, "a" );
     fd = fopen( datname, "ab" );

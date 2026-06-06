@@ -14,10 +14,11 @@ CC      := gcc
 CFLAGS  := -O3 -Wall
 LDFLAGS := -lm
 
-# short git commit hash baked in at compile time for output provenance
-# (falls back to "unknown" outside a git checkout)
+# short git commit hash + committer date baked in at compile time for output
+# provenance (both fall back to "unknown" outside a git checkout)
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
-CFLAGS += -DGIT_COMMIT=\"$(GIT_COMMIT)\"
+GIT_DATE   := $(shell git show -s --format=%cI HEAD 2>/dev/null || echo unknown)
+CFLAGS += -DGIT_COMMIT=\"$(GIT_COMMIT)\" -DGIT_DATE=\"$(GIT_DATE)\"
 
 SRCDIR  := src
 BUILD   := build

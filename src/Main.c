@@ -23,6 +23,10 @@
 #include "Mesh.h"
 #include "Output.h"
 
+// initial time-step guess used to start the adaptive CFL stepping; also recorded
+// as the input value 'dt' in the output header.
+#define DT_INITIAL 0.0001
+
 
 int Steps( DB_Block *B, int bMax, double *t, double tend, double CFLmax, double CFLreg );
 double TimeUpdate( DB_Block *B, int bMax, double dt, double t );
@@ -131,7 +135,12 @@ int main(int argc, const char **argv)
   SetBoundary( B, bMax, L_DATA, 0.0 );
   printf( "    done\n" );
 
-  Output( B, bMax, 0, 0.0, -1 );
+  // input information recorded in the output header: initial time step and the
+  // final requested simulation time (largest entry in OutTime).
+  double dt0 = DT_INITIAL, tFinal = 0.0;
+  for( int io=0; OutTime[io] > 0; io++ ) tFinal = OutTime[io];
+
+  Output( B, bMax, 0, 0.0, dt0, tFinal, -1 );
   
   CFLmax = 1.0;
   
@@ -142,7 +151,7 @@ int main(int argc, const char **argv)
   while( OutTime[n] > 0 ) {
     tend = OutTime[n];
     nMax += Steps( B, bMax, &t, tend, CFLmax, CFLreg ); 
-    Output( B, bMax, nMax, t, nMax );
+    Output( B, bMax, nMax, t, dt0, tFinal, nMax );
     n++;
   };
 
@@ -183,7 +192,7 @@ int Steps( DB_Block *B, int bMax, double *t, double tend, double CFLmax, double 
 {
   int dst_idx, nStep = 0, nRej = 0, showEvery = 1, m, nb;
   int gridsize = FullGridSize(B,bMax), minutes = 0, seconds = 0;
-  double CFL, dt = 0.0001, perfidx = 0.0, diff = 0.0;
+  double CFL, dt = DT_INITIAL, perfidx = 0.0, diff = 0.0;
   
   gettimeofday(&time0,NULL);
   while( *t < tend ) {
