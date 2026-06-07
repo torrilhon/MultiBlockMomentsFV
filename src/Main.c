@@ -188,7 +188,7 @@ double LinfDifference( DB_Block B )
 //*********************************************************************************************
 int Steps( DB_Block *B, int bMax, double *t, double tend, double CFLmax, double CFLreg )
 {
-  int nStep = 0, nRej = 0, showEvery = 1, nb;
+  int nStep = 0, nRej = 0, showEvery = 20, nb;
   int gridsize = FullGridSize(B,bMax), minutes = 0, seconds = 0;
   double CFL, dt = DT_INITIAL, perfidx = 0.0, diff = 0.0;
   
@@ -218,7 +218,7 @@ int Steps( DB_Block *B, int bMax, double *t, double tend, double CFLmax, double 
     if(!(nStep%showEvery)) {
       if( dt > 0 ) {
         diff = 0.0;
-        for( nb=0; nb<bMax; nb++ ) diff = max( diff, LinfDifference( B[nb] ) );
+        //for( nb=0; nb<bMax; nb++ ) diff = max( diff, LinfDifference( B[nb] ) );
         diff /= dt;
         perfidx = (1.0*GetmSec())/(1.0e-3*gridsize*(nStep+nRej));
         minutes = (int)(1.0e-6*perfidx*gridsize*(tend-(*t))/(60*dt));

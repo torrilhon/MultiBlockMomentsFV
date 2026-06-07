@@ -1,90 +1,134 @@
 # explore_ffs.jl
 # ----------------------------------------------------------------------------
-# Interactive exploration of the FORWARD-FACING STEP (FFS) results.
+# Interactive entry point for the Forward-Facing Step (Mach 3) case.
 #
-# This is the FFS-specific sibling of explore.jl. It loads an FFS run and makes
-# a polished filled-contour plot of the whole domain, with the "left-out"
-# region (the step) shown as a light-red block and the title placed in a small
-# white box in the bottom-right corner of that step.
+# Mirrors explore.jl but tuned for the FFS geometry: a wide 3:1 domain with a
+# rectangular step cut out of the lower-right corner. The plot below is built
+# by hand (rather than via plot_field) so we can control three things the
+# generic helper does not:
+#   * a colourbar that is no taller than the plot axis,
+#   * the left-out step region filled in light red,
+#   * the title placed inside the step as a small white-boxed label.
 #
-# How to use in VS Code (Julia extension):
-#   1. Open this file; make sure the Julia env is the `tools/` project
-#      (status bar, or run: `import Pkg; Pkg.activate(@__DIR__); Pkg.instantiate()`).
-#   2. Run the whole file (Alt+Enter on the first line / "Julia: Execute File
-#      in REPL"), or step through blocks with Shift+Enter.
-#   3. `sd` and the loaded modules stay live, so you can probe interactively.
-#
-# Re-running is safe (Revise `includet` tracks edits to load_solution.jl /
-# plot_field.jl in place). Everything is path-independent via @__DIR__.
+# Usage in VS Code (Julia extension): same as explore.jl -- Alt+Enter on the
+# first line or "Julia: Execute File in REPL". Re-running is safe (Revise).
 # ----------------------------------------------------------------------------
 
 import Pkg
 Pkg.activate(@__DIR__)            # use the tools/ environment (Revise, CairoMakie)
 # Pkg.instantiate()               # uncomment on first run if deps are missing
 
-using Revise                      # live-tracks the included source files
-using CairoMakie                  # plotting backend (loads the FV-mesh helpers too)
+using Revise
+using CairoMakie
 
 includet(joinpath(@__DIR__, "load_solution.jl"));  using .LoadSolution
 includet(joinpath(@__DIR__, "plot_field.jl"))
 
-# --- choose the Knudsen number ----------------------------------------------
-# Two FFS runs are available out of the box:
-#   runs/ffs_Kn0p001/   (Kn = 0.001)
-#   runs/ffs_Kn0p005/   (Kn = 0.005)
-Kn      = 0.001                                   # 0.001 or 0.005
-knstr   = replace(string(Kn), "." => "p")
-datafile = joinpath(@__DIR__, "..", "runs", "ffs_Kn$(knstr)",
-                    "Grad13ForwardFacingStep_nst6300_Kn$(knstr)_tAll.dat")
+# --- choose the result file -------------------------------------------------
+# Two reduced-output runs are provided (t = 0, 0.05, 0.1). Switch Kn here.
+Kn       = "0p001"     # "0p001" or "0p005"
+datafile = joinpath(@__DIR__, "..", "runs", "ffs",
+                    "Grad13ForwardFacingStep_nst7000_Kn$(Kn)_tAll.dat")
 
 # --- load the full result ---------------------------------------------------
 sd = load_solution(datafile)
 println(sd)
-println("\nstored times     : ", sd.times)
-println("variables        : ", sd.varnames)
-println("suggested (nx,ny) : ", suggest_resolution(sd))
-println("left-out region(s): ", gap_rectangles(sd))     # the step
+println("\nstored times    : ", sd.times)
+println("variables       : ", sd.varnames)
+println("suggested (nx,ny): ", suggest_resolution(sd))
 
-# --- make a polished contour plot -------------------------------------------
-var = "rho"
-t   = sd.times[end]
-fig = plot_field(sd, var, t;
-                 kind      = :contourf,
-                 levels    = 40,                   # smooth bands
-                 colormap  = :deep,                # oceanographic green->navy
-                 nx        = 900,                  # fine, seam-free sampling
-                 gap_color = (:red, 0.22),         # light-red step block
-                 title_box = true,                 # title in a box inside the step
-                 title     = "G13 Moment Equations, $var,  t = $t,  Kn = $Kn")
-
-display(fig)                                        # inline in the VS Code plot pane
-# save(joinpath(@__DIR__, "ffs_$(var)_Kn$(knstr).pdf"), fig)   # vector export
-# save(joinpath(@__DIR__, "ffs_$(var)_Kn$(knstr).png"), fig; px_per_unit = 2)
+# --- plot settings ----------------------------------------------------------
+var      = "rho"
+t        = 1.0
+kind     = :contourf
+levels   = 40
+colormap = :viridis #:deep
 
 # ----------------------------------------------------------------------------
-# Plot-styling cheatsheet (new keywords on plot_field, all optional):
+# plot_ffs: contour plot specialised for the forward-facing step.
 #
-#   gap_color  : fill colour of the left-out region(s). `(:red, 0.18)` = light
-#                red; `:transparent` (default) leaves the step blank.
-#   title_box  : `true`  -> title in a small white box (thin black frame) in the
-#                bottom-right corner of the step (this is the FFS look);
-#                `false` -> ordinary axis title on top.
-#   The colourbar is automatically matched in HEIGHT to the plotted field, so
-#   the legend is exactly as tall as the plot (not the whole figure).
-#
-# Other ideas you might like:
-#   - colormap = :balance / :vik / :turbo   for diverging or high-contrast fields
-#   - mesh = (color=(:black,0.15), linewidth=0.25)   to overlay the FV grid
-#   - outline = true                                 block bounding boxes
-#   - swap the field: "T", "p", "vx", "vy", "qx", "qy", "Pxx", ...
+# The "left-out block" is the step: the part of the domain bounding box that no
+# block covers. For the FFS it is the lower-right rectangle. We derive it from
+# the geometry rather than hard-coding: x spans from the right edge of the
+# lower strip (block 1) to the domain's right edge, and y from the domain
+# bottom up to the top of the lower strip.
 # ----------------------------------------------------------------------------
+function plot_ffs(sd, var, t; kind=:contourf, levels=40, colormap=:deep,
+                  nx=600, Kn=nothing)
+    xmin, xmax, ymin, ymax = domain_extent(sd)
+    xs, ys, Z = sample_field(sd, var, t; nx=nx, strict=true)
 
-# Probe interactively in the REPL after running the file, e.g.:
-#   value(sd, 1.0, 0.5, t, "T")              # dense output: T at (x,y,t)
-#   find_block(sd, 1.0, 0.1)                 # 0 -> point is in the step (gap)
-#   domain_extent(sd)                        # whole-domain bounding box
-#
-#   # another field / Knudsen number:
-#   fig2 = plot_field(sd, "T", t; kind=:contourf, levels=30,
-#                     gap_color=(:red,0.18), title_box=true,
-#                     title="T,  Kn = $Kn,  t = $t"); display(fig2)
+    finite     = filter(isfinite, Z)
+    colorrange = isempty(finite) ? (0.0, 1.0) : (minimum(finite), maximum(finite))
+
+    # Step (left-out) rectangle: the union gap in the lower-right corner.
+    # block 1 is the lower strip; its top edge is the step height and its right
+    # edge is the step's left edge. Derived from geometry, not hard-coded.
+    b1  = block_bounds(sd, 1)
+    sx0 = b1.xmax            # step starts where the lower strip ends
+    sx1 = xmax
+    sy0 = ymin
+    sy1 = b1.ymax            # step top = lower-strip top
+
+    aspect = (xmax - xmin) / (ymax - ymin)
+    axh    = 300             # axis height in px; width follows the data aspect
+    fig    = Figure(size = (round(Int, axh*aspect) + 140, axh + 70))
+
+    ax = Axis(fig[1, 1]; aspect = DataAspect(),
+    xgridvisible = false, ygridvisible = false)
+
+    plt = if kind === :contourf
+        lev = range(colorrange[1]-1e-6, colorrange[2]+1e-6; length = levels + 1)
+        contourf!(ax, xs, ys, Z; levels = lev, colormap = colormap)
+    elseif kind === :heatmap
+        heatmap!(ax, xs, ys, Z; colormap = colormap, colorrange = colorrange,
+                 nan_color = :transparent)
+    else
+        error("unknown kind=$kind")
+    end
+
+    # Fill the left-out step in light red (drawn on top so the blank NaN cells
+    # in the step read as a deliberate solid region, not missing data).
+    poly!(ax, Point2f[(sx0, sy0), (sx1, sy0), (sx1, sy1), (sx0, sy1)];
+          color = (:red, 0.22), strokecolor = (:firebrick, 0.6), strokewidth = 0.8)
+
+    limits!(ax, xmin, xmax, ymin, ymax)
+
+    # Compact colourbar: a slim legend whose height is pinned to the axis. With
+    # DataAspect the axis is short and wide; Aspect on the row makes the layout
+    # shrink the colourbar cell to the axis height instead of stretching it.
+    vname = var isa AbstractString ? var : sd.varnames[variable_index(sd, var)]
+    Colorbar(fig[1, 2], plt; width = 12,
+             ticklabelsize = 9, labelsize = 11)
+    rowsize!(fig.layout, 1, Aspect(1, 1/aspect))
+    colgap!(fig.layout, 8)
+
+    # Title moved into the step: a small white box with a thin black frame in
+    # the bottom-right corner. The box is sized in data units; the text is
+    # anchored to the same corner so it stays inside.
+    knstr = Kn === nothing ? "" : ",  Kn = $(Kn)"
+    ttl   = "G13 Moment Equations, $(vname),  t = $(round(t; digits=4))$(knstr)"
+    pad   = 0.012 * (xmax - xmin)
+    bw    = 0.62  * (sx1 - sx0)     # box width  (fraction of step width)
+    bh    = 0.40  * (sy1 - sy0)     # box height (fraction of step height)
+    bx1   = sx1 - pad;  bx0 = bx1 - bw
+    by0   = sy0 + pad;  by1 = by0 + bh
+    poly!(ax, Point2f[(bx0, by0), (bx1, by0), (bx1, by1), (bx0, by1)];
+          color = :white, strokecolor = :black, strokewidth = 0.8)
+    text!(ax, 0.5*(bx0+bx1), 0.5*(by0+by1); text = ttl,
+          align = (:center, :center), fontsize = 14, color = :black,
+          space = :data)
+
+    return fig, ax, (sx0, sx1, sy0, sy1)
+end
+
+fig, ax, step = plot_ffs(sd, var, t; kind=kind, levels=levels,
+                         colormap=colormap, Kn=replace(Kn, "p" => "."))
+display(fig)
+# save(joinpath(@__DIR__, "ffs_$(var)_Kn$(Kn).png"), fig)
+
+# ----------------------------------------------------------------------------
+# Probe interactively, e.g.:
+#   value(sd, 1.5, 0.5, 0.1, "T")
+#   find_block(sd, 0.3, 0.1)
+# ----------------------------------------------------------------------------
