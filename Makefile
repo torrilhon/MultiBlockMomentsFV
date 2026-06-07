@@ -2,10 +2,17 @@
 #  MultiBlockMomentsFV  --  build / run / check / clean
 #
 #  Quick start:
-#     make                         build build/moments
+#     make                         build build/moments        (serial)
+#     make omp                     build build/moments_omp     (OpenMP, -fopenmp)
 #     make run CASE=cases/squareSmall.txt
 #     make check                   regression run vs reference/ (see note below)
 #     make clean                   remove build artifacts
+#
+#  OpenMP: the omp build parallelizes the per-block loops in TimeUpdate() and
+#  the layer copy in Steps() over grid blocks. Control threads at runtime, e.g.
+#     OMP_NUM_THREADS=8 OMP_PROC_BIND=close OMP_PLACES=cores \
+#         ./build/moments_omp -bfile cases/square4.txt -out runs/square4
+#  Speedup scales up to ~min(bMax, cores); the serial build is unchanged.
 #
 #  (c) Manuel Torrilhon, RWTH Aachen 2026
 # ==========================================================================
@@ -19,6 +26,9 @@ LDFLAGS := -lm
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 CFLAGS += -DGIT_COMMIT=\"$(GIT_COMMIT)\"
 
+# OpenMP build adds -fopenmp at compile and link time (GCC needs it at both).
+OMPFLAGS := -fopenmp
+
 SRCDIR  := src
 BUILD   := build
 RUNS    := runs
@@ -28,6 +38,11 @@ REF     := reference
 SRC     := $(wildcard $(SRCDIR)/*.c)
 OBJ     := $(patsubst $(SRCDIR)/%.c,$(BUILD)/%.o,$(SRC))
 BIN     := $(BUILD)/moments
+
+# OpenMP variant: separate objects + binary so serial and omp builds coexist
+# (keeps regression / timing comparisons clean).
+OMPOBJ  := $(patsubst $(SRCDIR)/%.c,$(BUILD)/%.omp.o,$(SRC))
+OMPBIN  := $(BUILD)/moments_omp
 
 # default case for `make run`
 CASE    ?= cases/squareSmall.txt
@@ -44,7 +59,7 @@ RELTOL  ?= 1e-5
 # strip directory + .txt extension -> name of the run/output subfolder
 CASENAME = $(basename $(notdir $(CASE)))
 
-.PHONY: all run check clean help
+.PHONY: all omp run check clean help
 
 # --------------------------------------------------------------------------
 all: $(BIN)
@@ -55,6 +70,17 @@ $(BIN): $(OBJ) | $(BUILD)
 
 $(BUILD)/%.o: $(SRCDIR)/%.c | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+# --------------------------------------------------------------------------
+# omp: shared-memory parallel build (block-level OpenMP in TimeUpdate/Steps).
+omp: $(OMPBIN)
+
+$(OMPBIN): $(OMPOBJ) | $(BUILD)
+	$(CC) $(OMPOBJ) $(LDFLAGS) $(OMPFLAGS) -o $@
+	@echo "  -> built $(OMPBIN)  (run with OMP_NUM_THREADS=<n>)"
+
+$(BUILD)/%.omp.o: $(SRCDIR)/%.c | $(BUILD)
+	$(CC) $(CFLAGS) $(OMPFLAGS) -c $< -o $@
 
 $(BUILD):
 	@mkdir -p $(BUILD)
@@ -92,6 +118,6 @@ clean:
 	@echo "  -> removed $(BUILD)/  (run results in $(RUNS)/ are kept)"
 
 help:
-	@echo "targets: all (default), run, check, clean"
+	@echo "targets: all (default), omp, run, check, clean"
 	@echo "vars:    CASE=cases/<file>.txt        ARGS=\"-Kn 0.01 -CFL 0.9\""
 	@echo "         CHECKCASE=cases/<file>.txt   ABSTOL=1e-10 RELTOL=1e-8"

@@ -188,7 +188,7 @@ double LinfDifference( DB_Block B )
 //*********************************************************************************************
 int Steps( DB_Block *B, int bMax, double *t, double tend, double CFLmax, double CFLreg )
 {
-  int dst_idx, nStep = 0, nRej = 0, showEvery = 1, m, nb;
+  int nStep = 0, nRej = 0, showEvery = 1, nb;
   int gridsize = FullGridSize(B,bMax), minutes = 0, seconds = 0;
   double CFL, dt = DT_INITIAL, perfidx = 0.0, diff = 0.0;
   
@@ -230,11 +230,14 @@ int Steps( DB_Block *B, int bMax, double *t, double tend, double CFLmax, double 
     };
 
     // copy the whole New layer (interior AND ghost cells) back into Data, so the
-    // ghost cells stay valid for the first Update of the next step.
-    for( nb=0; nb<bMax; nb++ ) 
-      for( dst_idx=0; dst_idx<DBR_Size(B[nb].range); dst_idx++ ) 
-        for( m=0; m<N; m++ )
-          B[nb].layer[L_DATA][dst_idx].U[m] = B[nb].layer[L_NEW][dst_idx].U[m];
+    // ghost cells stay valid for the first Update of the next step. Blocks are
+    // independent here, so the outer nb loop runs in parallel (the inner index
+    // variables are declared locally to keep them thread-private).
+#pragma omp parallel for schedule(dynamic)
+    for( nb=0; nb<bMax; nb++ )
+      for( int idx=0; idx<DBR_Size(B[nb].range); idx++ )
+        for( int mm=0; mm<N; mm++ )
+          B[nb].layer[L_DATA][idx].U[mm] = B[nb].layer[L_NEW][idx].U[mm];
   };
 
   return( nStep );
@@ -253,12 +256,27 @@ double TimeUpdate( DB_Block *B, int bMax, double dt, double t )
   double CFLmax = 0.0, CFL1 = 0.0, CFL2 = 0.0;
 
   /****** two-dimensional second order Heun ****/
-  for( nb=0; nb<bMax; nb++ ) 
-    CFL1 = max( CFL1, Update( B[nb].layer[L_TMP], B[nb].layer[L_DATA], B[nb].Aux, B[nb], B[nb].layer[L_DATA], dt, t, 0 ) );
+  // Each block's Update() touches only its own New/Tmp/Aux buffers (the
+  // cross-face writes New[xp_idx]/New[yp_idx] stay inside the same block), so
+  // the loop over blocks is embarrassingly parallel. SetBoundary() is the
+  // serial barrier between RK stages: it reads ghost cells from neighbouring
+  // blocks and must run only after every Update() has finished. The CFL number
+  // is combined with an OpenMP max-reduction (no race). reduction(max:...)
+  // needs the built-in operator, so we capture Update()'s return in a local and
+  // fold it in with a plain comparison rather than the user-defined max().
+  // (Pragmas are ignored by a serial build, so behaviour is unchanged there.)
+#pragma omp parallel for schedule(dynamic) reduction(max:CFL1)
+  for( nb=0; nb<bMax; nb++ ) {
+    double cfl = Update( B[nb].layer[L_TMP], B[nb].layer[L_DATA], B[nb].Aux, B[nb], B[nb].layer[L_DATA], dt, t, 0 );
+    if( cfl > CFL1 ) CFL1 = cfl;
+  };
   SetBoundary( B, bMax, L_TMP, t+dt );
   
-  for( nb=0; nb<bMax; nb++ ) 
-    CFL2 = max( CFL2, Update( B[nb].layer[L_NEW], B[nb].layer[L_TMP], B[nb].Aux, B[nb], B[nb].layer[L_DATA], dt, t+dt, 1 ) );
+#pragma omp parallel for schedule(dynamic) reduction(max:CFL2)
+  for( nb=0; nb<bMax; nb++ ) {
+    double cfl = Update( B[nb].layer[L_NEW], B[nb].layer[L_TMP], B[nb].Aux, B[nb], B[nb].layer[L_DATA], dt, t+dt, 1 );
+    if( cfl > CFL2 ) CFL2 = cfl;
+  };
   SetBoundary( B, bMax, L_NEW, t+dt );
   
   CFLmax = max(CFL1, max(CFL2, CFLmax));
