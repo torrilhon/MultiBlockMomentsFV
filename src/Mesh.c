@@ -23,7 +23,7 @@
 
 double CFLreg = 0.95; // regulated CFL number (target)
 
-double TOut[21] = {0.0}; // resolved post-IC output times produced this run,
+double TOut[NOUT+1] = {0.0}; // resolved post-IC output times produced this run,
                          // 0-terminated. Built in ParseHeader from dt_out/t_list,
                          // driven by the evolution loop, and echoed in the header.
                          // The t=0 initial condition is written separately and is
@@ -61,7 +61,7 @@ static int ParseHeader( FILE *fp )
 {
   char tmp[300], key[64], val[200], *p;
   int i, n, n_times = 0, n_out = 0;
-  double dt_out = 0.0, t_list[20] = {0.0};
+  double dt_out = 0.0, t_list[NOUT+1] = {0.0};
 
   printf( "\n   Reading parameters...\n" );
   while( fgets(tmp,300,fp) != NULL ) {
@@ -83,7 +83,7 @@ static int ParseHeader( FILE *fp )
     else if( strcasecmp(key,"t_list")== 0 ) {
       char *q = val; double v;
       n_out = 0;
-      while( n_out < 19 && (v = strtod(q,&p)) != 0.0 && p != q ) { t_list[n_out++] = v; q = p; }
+      while( n_out < NOUT && (v = strtod(q,&p)) != 0.0 && p != q ) { t_list[n_out++] = v; q = p; }
       t_list[n_out] = 0.0;
     }
     else if( strcasecmp(key,"refine")== 0 ) { if( !RefineCLI ) Refine = atoi(val); }
@@ -98,6 +98,7 @@ static int ParseHeader( FILE *fp )
     // equal cadence up to the FIRST t_list; shorten the last step onto t_list.
     double tfin = t_list[0];
     n = (int)((tfin + 1e-10)/dt_out);          // number of full dt_out steps
+    if( n > NOUT-1 ) n = NOUT-1;               // clamp to array capacity (NOUT+1)
     for( i=0; i<n; i++ ) TOut[i] = (i+1)*dt_out;
     if( n*dt_out < tfin - 1e-10 ) TOut[n++] = tfin;  // partial final interval
     TOut[n] = 0.0;

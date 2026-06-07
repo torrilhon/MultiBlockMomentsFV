@@ -5,10 +5,15 @@
 /* (c) Manuel Torrilhon, ETH Zurich, 2010                                                     */
 //*********************************************************************************************
 
+#ifndef DEFS_H
+#define DEFS_H
+
 #define N 9   // number of variables, i.e., equations
 
 #define NB 32  // maximum number of grid blocks
 #define MBC 3  // number of ghost cells
+#define NOUT 50 // maximum number of (post-IC) output times; arrays hold NOUT+1
+                // to leave room for the trailing 0.0 terminator
 
 // (slope-limiter variants LIM_* are defined in Limiter.h)
 
@@ -61,4 +66,6 @@ typedef struct {
   int boundary[4]; // [0]-left, [1]-right, [2]-bottom, [3]-top
                    // open = 0, wall = -1, dirichlet = -2, synchro = (nr of block)
 } DB_Block;
+
+#endif // DEFS_H
 

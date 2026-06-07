@@ -6,8 +6,10 @@
 //  output file for restarts.
 //*********************************************************************************************
 
+#include "defs.h"   // NOUT (output-time array size), DB_Block
+
 extern double CFLreg;   // regulated (target) CFL number
-extern double TOut[21]; // resolved post-IC output times, 0-terminated (no t=0 entry)
+extern double TOut[NOUT+1]; // resolved post-IC output times, 0-terminated (no t=0 entry)
 extern int    Refine;     // uniform grid refinement factor (block file / -refine)
 extern int    RefineCLI;  // set !=0 before SetBlocks to make -refine override the file
 
