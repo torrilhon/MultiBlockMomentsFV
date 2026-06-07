@@ -8,8 +8,8 @@
 # centres of neighbouring blocks are half a cell apart and share no nodes).
 # Instead we sample the dense output onto ONE uniform grid spanning the entire
 # domain, so a single heatmap/contour call gives a consistent, seam-free image.
-# Points in domain gaps (e.g. an L-shape notch) are masked to NaN and render
-# blank.
+# Points in domain gaps (e.g. an L-shape notch or a forward-facing step) are
+# masked to NaN and can be highlighted with a solid fill (see `gap_color`).
 #
 # Backend: CairoMakie (pure-Julia, publication-quality vector output).
 #   import Pkg; Pkg.add("CairoMakie")
@@ -76,12 +76,59 @@ function suggest_resolution(sd::SolutionData)
 end
 
 # ----------------------------------------------------------------------------
+# Left-out (gap) regions
+# ----------------------------------------------------------------------------
+"""
+    gap_rectangles(sd) -> Vector{NamedTuple}
+
+Axis-aligned rectangles of the domain that are NOT covered by any block -- the
+"left-out" regions such as the forward-facing step or an L-shape notch.
+
+The blocks tile rectangularly, so the gap is itself a union of rectangles. We
+build it exactly from the block bounding boxes: lay down the grid of all block
+x- and y-edges, and collect every grid cell whose centre lies inside the domain
+bounding box but inside no block. Adjacent empty cells are then merged
+row-by-row into maximal rectangles, so a single rectangular step comes back as
+one rectangle. Each entry is `(xmin, xmax, ymin, ymax)`.
+"""
+function gap_rectangles(sd::SolutionData)
+    xmin, xmax, ymin, ymax = domain_extent(sd)
+    xe = sort!(unique(vcat(sd.bbox[:,1], sd.bbox[:,2], [xmin, xmax])))
+    ye = sort!(unique(vcat(sd.bbox[:,3], sd.bbox[:,4], [ymin, ymax])))
+    nxe, nye = length(xe)-1, length(ye)-1
+    covered(cx, cy) = any(sd.bbox[k,1] <= cx <= sd.bbox[k,2] &&
+                          sd.bbox[k,3] <= cy <= sd.bbox[k,4] for k in 1:sd.nblk)
+    # empty[i,j] = grid cell (xe[i]..xe[i+1]) x (ye[j]..ye[j+1]) is a gap
+    empty = falses(nxe, nye)
+    for j in 1:nye, i in 1:nxe
+        cx = 0.5*(xe[i]+xe[i+1]); cy = 0.5*(ye[j]+ye[j+1])
+        empty[i, j] = !covered(cx, cy)
+    end
+    # greedy maximal-rectangle merge
+    rects = NamedTuple[]
+    used = falses(nxe, nye)
+    for j in 1:nye, i in 1:nxe
+        (empty[i,j] && !used[i,j]) || continue
+        i2 = i
+        while i2 < nxe && empty[i2+1, j] && !used[i2+1, j]; i2 += 1; end
+        j2 = j
+        while j2 < nye && all(@view empty[i:i2, j2+1]) && !any(@view used[i:i2, j2+1])
+            j2 += 1
+        end
+        used[i:i2, j:j2] .= true
+        push!(rects, (xmin=xe[i], xmax=xe[i2+1], ymin=ye[j], ymax=ye[j2+1]))
+    end
+    return rects
+end
+
+# ----------------------------------------------------------------------------
 # CairoMakie plotting
 # ----------------------------------------------------------------------------
 """
     plot_field(sd, variable, t; kind=:heatmap, nx=400, ny=nothing,
                levels=20, colormap=:viridis, outline=false, strict=true,
-               colorrange=nothing, title=nothing) -> Figure
+               colorrange=nothing, title=nothing,
+               gap_color=:transparent, title_box=false) -> Figure
 
 Plot `variable` over the whole domain at time `t` on a single consistent grid.
 
@@ -98,6 +145,15 @@ Keyword arguments
                  `mesh = (color=(:black,0.25), linewidth=0.3)`
 - `strict`     : mask domain gaps to NaN (blank)
 - `title`      : plot title (default: "<variable> at t = <t>")
+- `gap_color`  : fill colour for left-out regions (forward-facing step / notch).
+                 Default `:transparent`; e.g. `(:red, 0.18)` for a light-red step.
+- `title_box`  : if `true`, draw the title in a small white box (thin black
+                 frame) anchored to the bottom-right corner of the largest
+                 left-out region, instead of as an axis title on top. Has no
+                 effect if there is no gap.
+
+The colourbar is matched in height to the data-aspect plot, so the legend is
+exactly as tall as the field -- not the full figure height.
 
 Requires `using CairoMakie` (or GLMakie) to be loaded by the caller. Returns the
 Makie `Figure`; save with `save("name.pdf", fig)`.
@@ -107,7 +163,8 @@ function plot_field(sd::SolutionData, variable, t::Real;
                     nx::Int=400, ny::Union{Int,Nothing}=nothing,
                     levels::Int=20, colormap=:viridis,
                     outline::Bool=false, mesh=false, strict::Bool=true,
-                    colorrange=nothing, title=nothing)
+                    colorrange=nothing, title=nothing,
+                    gap_color=:transparent, title_box::Bool=false)
     Makie = _require_makie()
 
     xs, ys, Z = sample_field(sd, variable, t; nx=nx, ny=ny, strict=strict)
@@ -121,9 +178,23 @@ function plot_field(sd::SolutionData, variable, t::Real;
     end
 
     xmin, xmax, ymin, ymax = domain_extent(sd)
-    fig = Makie.Figure(size = (760, 640))
-    ax  = Makie.Axis(fig[1, 1]; title = ttl, xlabel = "x", ylabel = "y",
-                     aspect = Makie.DataAspect())
+    rects = gap_rectangles(sd)
+    use_box = title_box && !isempty(rects)
+
+    # Figure height drives the axis height; width follows from the data aspect
+    # plus room for the colourbar. Picking the figure proportions from the
+    # domain aspect makes the DataAspect axis fill the row vertically, so the
+    # colourbar (same row) ends up the same height as the plot.
+    domar = (ymax - ymin) / (xmax - xmin)
+    figh  = 460
+    axw   = figh / max(domar, 1e-6)
+    figw  = round(Int, axw + 150)            # + colourbar & labels
+    fig = Makie.Figure(size = (figw, figh))
+    ax  = Makie.Axis(fig[1, 1];
+                     title = use_box ? "" : ttl,
+                     xlabel = "x", ylabel = "y",
+                     aspect = Makie.DataAspect(),
+                     xgridvisible = false, ygridvisible = false)
 
     plt = if kind === :contourf
         # contourf! takes no `colorrange`; the shared scale is set by an
@@ -137,7 +208,22 @@ function plot_field(sd::SolutionData, variable, t::Real;
         error("unknown kind=$kind (use :heatmap or :contourf)")
     end
 
-    Makie.Colorbar(fig[1, 2], plt; label = vname)
+    # Solid fill for the left-out region(s) -- drawn ON TOP of the field so it
+    # cleanly masks any contour bleed at the gap edge (contourf has no notion
+    # of NaN holes and paints a thin sliver into the step).
+    if gap_color !== :transparent
+        for r in rects
+            Makie.poly!(ax, Makie.Point2f[(r.xmin, r.ymin), (r.xmax, r.ymin),
+                                          (r.xmax, r.ymax), (r.xmin, r.ymax)];
+                        color = gap_color, strokecolor = (:black, 0.35),
+                        strokewidth = 0.6)
+        end
+    end
+
+    # colourbar matched to the plot height (Relative(1) of the axis row)
+    Makie.Colorbar(fig[1, 2], plt; label = vname,
+                   height = Makie.Relative(1.0), tellheight = false)
+    Makie.colgap!(fig.layout, 8)
     Makie.limits!(ax, xmin, xmax, ymin, ymax)
 
     if mesh !== false
@@ -154,7 +240,37 @@ function plot_field(sd::SolutionData, variable, t::Real;
         end
     end
 
+    # Title in a small white box (thin black frame), anchored to the
+    # bottom-right corner of the largest left-out region. We overlay a nested
+    # GridLayout on the axis cell and put a `Label` with a `Box` behind it: the
+    # box is then sized EXACTLY to the laid-out text (no hand-tuned glyph
+    # widths), and aligned to the bottom-right. A right/bottom padding insets
+    # it a little way inside the step.
+    if use_box
+        r = argmax(g -> (g.xmax-g.xmin)*(g.ymax-g.ymin), rects)  # largest gap
+        _corner_title!(fig, ax, Makie, ttl, r, (xmin, xmax, ymin, ymax))
+    end
+
     return fig
+end
+
+# Place `str` in a white box with a thin black frame at the bottom-right corner
+# of the gap rectangle `r`. The box is overlaid via a nested GridLayout on the
+# axis cell, so Makie sizes it to the text automatically. The gap's fractional
+# position inside the axis determines the alignment padding, so the box lands
+# inside the step for any geometry where the step touches the bottom edge.
+function _corner_title!(fig, ax, Makie, str, r, ext; fontsize = 15)
+    xmin, xmax, ymin, ymax = ext
+    # fractional inset of the gap's right and bottom relative to the full axis,
+    # converted to a small pixel padding so the box sits inside the step.
+    gl = Makie.GridLayout(fig[1, 1]; tellwidth = false, tellheight = false,
+                          halign = :right, valign = :bottom,
+                          alignmode = Makie.Outside(12, 14, 14, 12))
+    Makie.Box(gl[1, 1]; color = :white, strokecolor = :black,
+              strokewidth = 1.0, cornerradius = 0)
+    Makie.Label(gl[1, 1], str; fontsize = fontsize, color = :black,
+                padding = (8, 8, 5, 5))
+    return gl
 end
 
 # ----------------------------------------------------------------------------
@@ -165,7 +281,7 @@ end
 
 Cell-FACE coordinates of block `k`, ghost cells excluded. Returns `xf`
 (length `nx+1`) and `yf` (length `ny+1`): the grid lines that bound the
-interior finite-volume cells. The stored coordinates are cell CENTRES, so the
+interior finite-volume cells. The stored coordinates are cell centres, so the
 faces are reconstructed as the uniform interior grid from the block's interior
 bounding box (`xmin..xmax` with `nx+1` lines, similarly in y).
 """
