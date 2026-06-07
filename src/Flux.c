@@ -336,7 +336,7 @@ static inline double FnumHLLE( double dtdx, double dx, double *PrimL, double *dP
   double fR[N], fL[N], UL[N], UR[N];
   double vR, vL, cR = MaxSound1(PrimR,1,0), cL = MaxSound1(PrimL,-1,0);
   double cMax, dScaleL, dScaleR;
-  double lamL, lamR, lam, alph;
+  double lamL, lamR, alph;
 
   if( flag==1 ) {
     vR = PrimR[1]; vL = PrimL[1];
@@ -350,22 +350,30 @@ static inline double FnumHLLE( double dtdx, double dx, double *PrimL, double *dP
 
   cMax = fabs(0.5*(vL+vR))+max(cR,cL);
   cMax = cMax/lamDiff(max(dScaleL,dScaleR)/(cMax*dx));
-  lamL = vL-cL;
-  lamR = vR+cR;
 
- if( fabs(lamL-lamR) < 1e-12 ) {
-    lam  = 0.0;
-    alph = max( fabs(lamL), fabs(lamR) );
-  } else {
-    lam  = (fabs(lamL)-fabs(lamR))/(lamL-lamR);
-    alph = (fabs(lamL)-lam*lamL);
-  };
-  
+  // HLL/HLLE numerical flux (Harten-Lax-van Leer, Einfeldt). The standard form
+  //   F = ( SRp*fL - SLm*fR + SLm*SRp*(UR-UL) ) / (SRp - SLm)
+  // uses the *clipped* signal speeds  SLm = min(SL,0),  SRp = max(SR,0)  (Toro,
+  // Riemann Solvers and Numerical Methods, eq.10.21). The clipping is what makes
+  // the scheme well defined for every wave configuration: SRp - SLm >= 0 always,
+  // and it vanishes only at a stationary sonic state (SL>=0 and SR<=0), where the
+  // numerator vanishes too, so the flux limits continuously to the central flux
+  // 0.5*(fL+fR). Using the raw speeds SL,SR in the denominator instead (as an
+  // earlier version did) gives 0/0 at a wall in supersonic flow, where the
+  // mirrored ghost makes SL = vL-cL and SR = vR+cR both exactly zero.
+  lamL = min( vL-cL, 0.0 );    // SLm = min(SL,0)
+  lamR = max( vR+cR, 0.0 );    // SRp = max(SR,0)
+  alph = lamR - lamL;          // >= 0, zero only at a stationary sonic point
+
   Conservative( PrimL, UL );
   Conservative( PrimR, UR );
-  
-  for( n=0; n<N; n++ )
-    flx[n] = 0.5*((1+lam)*fL[n]+(1-lam)*fR[n]-alph*(UR[n]-UL[n]));
+
+  if( alph > 0.0 )
+    for( n=0; n<N; n++ )
+      flx[n] = ( lamR*fL[n] - lamL*fR[n] + lamL*lamR*(UR[n]-UL[n]) )/alph;
+  else
+    for( n=0; n<N; n++ )
+      flx[n] = 0.5*( fL[n] + fR[n] );
 
   return( cMax );
 };

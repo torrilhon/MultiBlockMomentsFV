@@ -188,7 +188,7 @@ double LinfDifference( DB_Block B )
 //*********************************************************************************************
 int Steps( DB_Block *B, int bMax, double *t, double tend, double CFLmax, double CFLreg )
 {
-  int nStep = 0, nRej = 0, showEvery = 20, nb;
+  int nStep = 0, nRej = 0, showEvery = 1, nb;
   int gridsize = FullGridSize(B,bMax), minutes = 0, seconds = 0;
   double CFL, dt = DT_INITIAL, perfidx = 0.0, diff = 0.0;
   
@@ -218,7 +218,7 @@ int Steps( DB_Block *B, int bMax, double *t, double tend, double CFLmax, double 
     if(!(nStep%showEvery)) {
       if( dt > 0 ) {
         diff = 0.0;
-        //for( nb=0; nb<bMax; nb++ ) diff = max( diff, LinfDifference( B[nb] ) );
+        for( nb=0; nb<bMax; nb++ ) diff = max( diff, LinfDifference( B[nb] ) );
         diff /= dt;
         perfidx = (1.0*GetmSec())/(1.0e-3*gridsize*(nStep+nRej));
         minutes = (int)(1.0e-6*perfidx*gridsize*(tend-(*t))/(60*dt));
@@ -271,7 +271,6 @@ double TimeUpdate( DB_Block *B, int bMax, double dt, double t )
     if( cfl > CFL1 ) CFL1 = cfl;
   };
   SetBoundary( B, bMax, L_TMP, t+dt );
-  SetBoundary( B, bMax, L_TMP, t+dt );
   
 #pragma omp parallel for schedule(dynamic) reduction(max:CFL2)
   for( nb=0; nb<bMax; nb++ ) {
@@ -279,7 +278,6 @@ double TimeUpdate( DB_Block *B, int bMax, double dt, double t )
     if( cfl > CFL2 ) CFL2 = cfl;
   };
   SetBoundary( B, bMax, L_NEW, t+dt );
-  SetBoundary( B, bMax, L_TMP, t+dt );
   
   CFLmax = max(CFL1, max(CFL2, CFLmax));
   return( CFLmax );
@@ -307,6 +305,17 @@ double Update( CVector *New, CVector *Data, AuxData *Aux,
   double  dtdx = dt/B.dx, dtdy = dt/B.dy;
   DB_Range R = B.range;
   int line = R.rbt.i - R.lfb.i + 1;
+
+  // Fill primitive variables for ALL cells, including the outermost ghost
+  // layer (i = lfb.i, rbt.i and j = lfb.j, rbt.j). The slope loop below reads
+  // neighbour primitives at idx +/- 1 and idx +/- line, which reach this
+  // outermost layer; without this pass those Prim values are uninitialised and
+  // produce NaN slopes that contaminate the wall-face reconstruction.
+  for( i=R.lfb.i; i<=R.rbt.i; i++ )
+    for( j=R.lfb.j; j<=R.rbt.j; j++ ) {
+      idx = (j - R.lfb.j)*line + (i - R.lfb.i);
+      Primitive( Data[idx].U, Aux[idx].Prim );
+    };
 
   for( i=R.lfb.i+1; i<=R.rbt.i-1; i++ )
     for( j=R.lfb.j+1; j<=R.rbt.j-1; j++ ) {

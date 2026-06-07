@@ -143,10 +143,38 @@ static inline BCType BCFromCode( int code )
 }
 
 //---------------------------------------------------------------------------------------------
+// Fill the MBC x MBC ghost block in one CORNER of block D by zero-gradient extrapolation from
+// the nearest interior corner cell. The edge passes only write the straight ghost strips along
+// each side; the diagonal corner ghosts (used by the second-order slope stencil) are left
+// unset wherever two edges meet -- and at a re-entrant multi-block notch (e.g. the L-shape)
+// there is no neighbour to supply them at all, so they keep their initialised value (rho=0),
+// which poisons the reconstruction (Prim = .../rho -> NaN). Copying the corner interior cell
+// into the whole corner ghost block gives a finite, consistent state there.
+//   cx = -1 (left) / +1 (right);  cy = -1 (bottom) / +1 (top)
+//---------------------------------------------------------------------------------------------
+static void FillCorner( DB_Block *D, int L, int cx, int cy )
+{
+  DB_Range R = D->range;
+  CVector *dst = D->layer[L];
+  // nearest interior corner cell (just inside the MBC ghost layers)
+  int si = (cx<0) ? R.lfb.i+MBC : R.rbt.i-MBC;
+  int sj = (cy<0) ? R.lfb.j+MBC : R.rbt.j-MBC;
+  int src = DBR_Index( si, sj, R );
+  // ghost-block index ranges in each direction
+  int i0 = (cx<0) ? R.lfb.i : R.rbt.i-MBC+1,  i1 = (cx<0) ? R.lfb.i+MBC-1 : R.rbt.i;
+  int j0 = (cy<0) ? R.lfb.j : R.rbt.j-MBC+1,  j1 = (cy<0) ? R.lfb.j+MBC-1 : R.rbt.j;
+  for( int gi=i0; gi<=i1; gi++ )
+    for( int gj=j0; gj<=j1; gj++ )
+      CopyCell( dst, DBR_Index(gi,gj,R), dst, src );
+}
+
+//---------------------------------------------------------------------------------------------
 // Fill the ghost cells of layer L for all blocks, for the four edges each, at time t.
 // Self-referential kinds (open/wall/dirichlet) are filled first per block; sync edges then
 // overwrite from the neighbour. Because every block fills its own sync edges from the
-// neighbour's interior, both sides of an interface end up consistent.
+// neighbour's interior, both sides of an interface end up consistent. A final corner pass
+// fills the diagonal corner ghost blocks (which no edge writes) by extrapolation, so the
+// second-order slope stencil never reads an unset (rho=0) corner.
 //---------------------------------------------------------------------------------------------
 void SetBoundary( DB_Block *B, int bMax, int L, double t )
 {
@@ -166,4 +194,13 @@ void SetBoundary( DB_Block *B, int bMax, int L, double t )
     for( s=0; s<4; s++ )
       if( (code = B[nb].boundary[s]) > 0 )
         FillEdge( &B[nb], &B[code-1], L, s, BC_SYNC, t );
+
+  // pass 3: corner ghost blocks -- not written by any edge pass. Extrapolate from the
+  // nearest interior corner cell so the diagonal stencil reads a finite, sane state.
+  for( nb=0; nb<bMax; nb++ ) {
+    FillCorner( &B[nb], L, -1, -1 );   // bottom-left
+    FillCorner( &B[nb], L, +1, -1 );   // bottom-right
+    FillCorner( &B[nb], L, -1, +1 );   // top-left
+    FillCorner( &B[nb], L, +1, +1 );   // top-right
+  }
 }
