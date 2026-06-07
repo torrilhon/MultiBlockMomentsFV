@@ -352,8 +352,14 @@ static inline double FnumHLLE( double dtdx, double dx, double *PrimL, double *dP
   cMax = cMax/lamDiff(max(dScaleL,dScaleR)/(cMax*dx));
   lamL = vL-cL;
   lamR = vR+cR;
-  lam = (fabs(lamL)-fabs(lamR))/(lamL-lamR);
-  alph = (fabs(lamL)-lam*lamL);
+
+ if( fabs(lamL-lamR) < 1e-12 ) {
+    lam  = 0.0;
+    alph = max( fabs(lamL), fabs(lamR) );
+  } else {
+    lam  = (fabs(lamL)-fabs(lamR))/(lamL-lamR);
+    alph = (fabs(lamL)-lam*lamL);
+  };
   
   Conservative( PrimL, UL );
   Conservative( PrimR, UR );
