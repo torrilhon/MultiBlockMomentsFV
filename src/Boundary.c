@@ -143,64 +143,51 @@ static inline BCType BCFromCode( int code )
 }
 
 //---------------------------------------------------------------------------------------------
-// Fill the MBC x MBC ghost block in one CORNER of block D by zero-gradient extrapolation from
-// the nearest interior corner cell. The edge passes only write the straight ghost strips along
-// each side; the diagonal corner ghosts (used by the second-order slope stencil) are left
-// unset wherever two edges meet -- and at a re-entrant multi-block notch (e.g. the L-shape)
-// there is no neighbour to supply them at all, so they keep their initialised value (rho=0),
-// which poisons the reconstruction (Prim = .../rho -> NaN). Copying the corner interior cell
-// into the whole corner ghost block gives a finite, consistent state there.
-//   cx = -1 (left) / +1 (right);  cy = -1 (bottom) / +1 (top)
-//---------------------------------------------------------------------------------------------
-static void FillCorner( DB_Block *D, int L, int cx, int cy )
-{
-  DB_Range R = D->range;
-  CVector *dst = D->layer[L];
-  // nearest interior corner cell (just inside the MBC ghost layers)
-  int si = (cx<0) ? R.lfb.i+MBC : R.rbt.i-MBC;
-  int sj = (cy<0) ? R.lfb.j+MBC : R.rbt.j-MBC;
-  int src = DBR_Index( si, sj, R );
-  // ghost-block index ranges in each direction
-  int i0 = (cx<0) ? R.lfb.i : R.rbt.i-MBC+1,  i1 = (cx<0) ? R.lfb.i+MBC-1 : R.rbt.i;
-  int j0 = (cy<0) ? R.lfb.j : R.rbt.j-MBC+1,  j1 = (cy<0) ? R.lfb.j+MBC-1 : R.rbt.j;
-  for( int gi=i0; gi<=i1; gi++ )
-    for( int gj=j0; gj<=j1; gj++ )
-      CopyCell( dst, DBR_Index(gi,gj,R), dst, src );
-}
-
-//---------------------------------------------------------------------------------------------
 // Fill the ghost cells of layer L for all blocks, for the four edges each, at time t.
-// Self-referential kinds (open/wall/dirichlet) are filled first per block; sync edges then
-// overwrite from the neighbour. Because every block fills its own sync edges from the
-// neighbour's interior, both sides of an interface end up consistent. A final corner pass
-// fills the diagonal corner ghost blocks (which no edge writes) by extrapolation, so the
-// second-order slope stencil never reads an unset (rho=0) corner.
+//
+// The diagonal MBC x MBC corner ghost blocks are filled WITHOUT any extra corner routine or
+// any corner-connectivity data in the block file, by relying on the structure of two sweeps:
+//
+//   Sweep 1 (all edges, all kinds, full tangential range incl. the corner extension):
+//     Every edge ghost strip is written by its own boundary kind. The tangential loop in
+//     FillEdge runs the full range, so the corner ghosts are also written -- but as a side
+//     effect of whichever edges cover them, in block/edge index order (last writer wins). The
+//     corner values from this sweep are therefore order dependent. HOWEVER the *inner*
+//     tangential ghost cells (the non-corner part of every strip) are unconditionally correct
+//     after sweep 1: open/wall/dirichlet read genuine interior cells of the block, and sync
+//     reads genuine interior cells of the neighbour. Interior cells are never modified by
+//     SetBoundary, so their values do not depend on processing order.
+//
+//   Sweep 2 (sync edges only, full tangential range):
+//     Re-copy each sync strip from the neighbour. At a corner-tangential position the source
+//     index resolves to the neighbour's inner ghost strip -- which sweep 1 already filled
+//     correctly -- so the corner ghosts now receive physically valid, order-independent data
+//     relayed around the corner. At a re-entrant multi-block notch the vertical-sync and
+//     horizontal-sync neighbours fill the corner block differently; that is intentional, since
+//     each direction then carries the wall-reflected state appropriate to its own flux.
+//
+// The only corners left order dependent are convex DOMAIN corners where BOTH adjacent edges
+// are non-sync (OO, WW, OW, OD, WD, DD). They keep their finite sweep-1 value; this is a small
+// localised inconsistency in the cross-derivative stencil, never a NaN, and is accepted.
 //---------------------------------------------------------------------------------------------
 void SetBoundary( DB_Block *B, int bMax, int L, double t )
 {
   int nb, s, code;
   BCType bc;
 
-  // pass 1: open / wall / dirichlet (depend only on the block itself)
+  // sweep 1: every edge by its own kind (open/wall/dirichlet from the block itself, sync from
+  // the neighbour interior), over the full tangential range including the corner extension.
   for( nb=0; nb<bMax; nb++ )
     for( s=0; s<4; s++ ) {
       bc = BCFromCode( B[nb].boundary[s] );
-      if( bc != BC_SYNC )
-        FillEdge( &B[nb], &B[nb], L, s, bc, t );
+      if( bc == BC_SYNC ) FillEdge( &B[nb], &B[B[nb].boundary[s]-1], L, s, BC_SYNC, t );
+      else                FillEdge( &B[nb], &B[nb],                  L, s, bc,      t );
     }
 
-  // pass 2: synchronisation (reads neighbour interior, which pass 1 has set if needed)
+  // sweep 2: sync edges only. Reads the neighbour's now-correct inner ghost strips into the
+  // corner ghosts, giving valid order-independent corner data (no separate corner routine).
   for( nb=0; nb<bMax; nb++ )
     for( s=0; s<4; s++ )
       if( (code = B[nb].boundary[s]) > 0 )
         FillEdge( &B[nb], &B[code-1], L, s, BC_SYNC, t );
-
-  // pass 3: corner ghost blocks -- not written by any edge pass. Extrapolate from the
-  // nearest interior corner cell so the diagonal stencil reads a finite, sane state.
-  for( nb=0; nb<bMax; nb++ ) {
-    FillCorner( &B[nb], L, -1, -1 );   // bottom-left
-    FillCorner( &B[nb], L, +1, -1 );   // bottom-right
-    FillCorner( &B[nb], L, -1, +1 );   // top-left
-    FillCorner( &B[nb], L, +1, +1 );   // top-right
-  }
 }
