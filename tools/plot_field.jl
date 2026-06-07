@@ -161,7 +161,7 @@ Makie `Figure`; save with `save("name.pdf", fig)`.
 function plot_field(sd::SolutionData, variable, t::Real;
                     kind::Symbol=:heatmap,
                     nx::Int=400, ny::Union{Int,Nothing}=nothing,
-                    levels::Int=20, colormap=:viridis,
+                    levels::Int=40, colormap=:deep,
                     outline::Bool=false, mesh=false, strict::Bool=true,
                     colorrange=nothing, title=nothing,
                     gap_color=:transparent, title_box::Bool=false)
@@ -220,8 +220,10 @@ function plot_field(sd::SolutionData, variable, t::Real;
         end
     end
 
-    # colourbar matched to the plot height (Relative(1) of the axis row)
-    Makie.Colorbar(fig[1, 2], plt; label = vname,
+    # Slim colourbar matched to the plot height (Relative(1) of the axis row),
+    # with compact tick/label fonts so it reads as a legend, not a second panel.
+    Makie.Colorbar(fig[1, 2], plt; label = vname, width = 12,
+                   ticklabelsize = 9, labelsize = 11,
                    height = Makie.Relative(1.0), tellheight = false)
     Makie.colgap!(fig.layout, 8)
     Makie.limits!(ax, xmin, xmax, ymin, ymax)
@@ -240,36 +242,40 @@ function plot_field(sd::SolutionData, variable, t::Real;
         end
     end
 
-    # Title in a small white box (thin black frame), anchored to the
-    # bottom-right corner of the largest left-out region. We overlay a nested
-    # GridLayout on the axis cell and put a `Label` with a `Box` behind it: the
-    # box is then sized EXACTLY to the laid-out text (no hand-tuned glyph
-    # widths), and aligned to the bottom-right. A right/bottom padding insets
-    # it a little way inside the step.
+    # Title in a small white box (thin black frame), floating INSIDE the largest
+    # left-out region. The box is sized EXACTLY to the laid-out text by Makie
+    # (no hand-tuned glyph widths, so any title length stays inside its frame),
+    # then centred within the step's band and inset from the right edge.
     if use_box
         r = argmax(g -> (g.xmax-g.xmin)*(g.ymax-g.ymin), rects)  # largest gap
-        _corner_title!(fig, ax, Makie, ttl, r, (xmin, xmax, ymin, ymax))
+        _step_title!(fig, ax, Makie, ttl, r, (xmin, xmax, ymin, ymax), figh)
     end
 
     return fig
 end
 
-# Place `str` in a white box with a thin black frame at the bottom-right corner
-# of the gap rectangle `r`. The box is overlaid via a nested GridLayout on the
-# axis cell, so Makie sizes it to the text automatically. The gap's fractional
-# position inside the axis determines the alignment padding, so the box lands
-# inside the step for any geometry where the step touches the bottom edge.
-function _corner_title!(fig, ax, Makie, str, r, ext; fontsize = 15)
+# Place `str` in an auto-sized white box (thin black frame) floating inside the
+# gap rectangle `r`. Implemented as a nested GridLayout overlaid on the axis
+# cell so Makie sizes the box to the text automatically. The box is aligned to
+# the right and vertically centred within the step band, with pixel paddings
+# derived from the step's fractional position so it floats comfortably inside
+# the step rather than hugging the axis frame. Works for any gap that touches
+# the bottom/right edges (FFS step) and degrades gracefully otherwise.
+function _step_title!(fig, ax, Makie, str, r, ext, figh; fontsize = 14)
     xmin, xmax, ymin, ymax = ext
-    # fractional inset of the gap's right and bottom relative to the full axis,
-    # converted to a small pixel padding so the box sits inside the step.
+    fy = (r.ymax - r.ymin) / (ymax - ymin)          # step height fraction
+    # axis pixel height ~ figh minus top/bottom protrusions; enough for layout.
+    axpix   = 0.78 * figh
+    bandpix = fy * axpix                            # step band height in px
+    # centre the (auto-height) box in the band: bottom pad ~ half the leftover.
+    botpad  = max(6.0, 0.30 * bandpix)
     gl = Makie.GridLayout(fig[1, 1]; tellwidth = false, tellheight = false,
                           halign = :right, valign = :bottom,
-                          alignmode = Makie.Outside(12, 14, 14, 12))
+                          alignmode = Makie.Outside(12, 16, botpad, 12))
     Makie.Box(gl[1, 1]; color = :white, strokecolor = :black,
-              strokewidth = 1.0, cornerradius = 0)
+              strokewidth = 0.8, cornerradius = 0)
     Makie.Label(gl[1, 1], str; fontsize = fontsize, color = :black,
-                padding = (8, 8, 5, 5))
+                padding = (10, 10, 6, 6))
     return gl
 end
 

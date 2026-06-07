@@ -50,12 +50,12 @@ var = "rho"
 t   = sd.times[end]
 fig = plot_field(sd, var, t;
                  kind      = :contourf,
-                 levels    = 30,
-                 colormap  = :viridis,
+                 levels    = 40,                   # smooth bands
+                 colormap  = :deep,                # oceanographic green->navy
                  nx        = 900,                  # fine, seam-free sampling
-                 gap_color = (:red, 0.18),         # light-red step block
-                 title_box = true,                 # title in a corner box
-                 title     = "$var,  Kn = $Kn,  t = $t")
+                 gap_color = (:red, 0.22),         # light-red step block
+                 title_box = true,                 # title in a box inside the step
+                 title     = "G13 Moment Equations, $var,  t = $t,  Kn = $Kn")
 
 display(fig)                                        # inline in the VS Code plot pane
 # save(joinpath(@__DIR__, "ffs_$(var)_Kn$(knstr).pdf"), fig)   # vector export
