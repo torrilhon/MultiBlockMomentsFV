@@ -4,13 +4,13 @@
 Kn      = 0.001
 R13     = 0
 CFL     = 0.95
-limiter = harmonic
+limiter = minmod
 dt_out  = 0.05      # output cadence (equal intervals up to t_list; 0 = output only at t_list)
-t_list   = 0.6       # requested output time(s)
+t_list   = 0.1       # requested output time(s)
 refine  = 1         # uniform grid refinement factor (multiplies nx,ny of every block)
 
 Block data (Maximal NB blocks!):
 number/xmin,xmax/ymin,ymax/nstx,nsty/leftbound,rightbound,bottombound,topbound/
-1/-1.0,0.5/-1.0,0.2/300,240/0,-1,0,2/
-2/-1.0,0.5/0.2,1.0/300,160/0,3,1,0/
-3/0.5,1.0/0.2,1.0/100,160/2,0,-1,0/
+1/-1.0,0.5/-1.0,0.2/300,240/-2,-1,0,2/
+2/-1.0,0.5/0.2,1.0/300,160/-2,3,1,-1/
+3/0.5,1.0/0.2,1.0/100,160/2,0,-1,-1/

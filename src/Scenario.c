@@ -76,7 +76,7 @@ void SetInitial( double *U, Vector P, double t )
    double vs, E;
    double x = P.x, y = P.y;
 
-  /*** Problem 1  tend=0.3 *****/
+  /*** Problem 1  tend=0.3 *****
   sprintf( Type, "Riemann2D" );
 
   v1 = 0.0;
@@ -95,9 +95,9 @@ void SetInitial( double *U, Vector P, double t )
 
   T11 = theta;
   T22 = theta;
-  //-----
+  //-----*/
 
-  /*** Problem 2  tend=0.3 -----
+  /*** Problem 2  tend=0.3 *****
   sprintf( Type, "Riemann1D" );
 
   vx = 0.0;
@@ -120,8 +120,22 @@ void SetInitial( double *U, Vector P, double t )
   Pxx = p;
   Pyy = p;
   Pzz = p;
-  -----*/
+  //-----*/
 
+  /*** Problem 1  tend=0.3 *****/
+  sprintf( Type, "ForwardFacingStep" );
+
+  rho = 1.0;
+  v1 = 2.0*sqrt(5.0/3.0);
+  v2 = 0.0;
+  T12 = 0.0;
+  q1 = 0.0;
+  q2 = 0.0;
+  theta = 1.0;
+  
+  T11 = theta;
+  T22 = theta;
+  //-----*/
 
   vs  = v1*v1+v2*v2;
   E = 0.5*rho*vs+1.5*rho*theta;

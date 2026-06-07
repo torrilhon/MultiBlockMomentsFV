@@ -34,9 +34,9 @@ includet(joinpath(@__DIR__, "load_solution.jl"));  using .LoadSolution
 includet(joinpath(@__DIR__, "plot_field.jl"))
 
 # --- choose the result file -------------------------------------------------
-datafile = joinpath(@__DIR__, "..", "reference", "square4.ref.dat")
-# datafile = joinpath(@__DIR__, "..", "runs", "square4",
-#                     "Grad13Riemann2D_nst22500_Kn0p001_tAll.dat")
+#datafile = joinpath(@__DIR__, "..", "reference", "square4.ref.dat")
+datafile = joinpath(@__DIR__, "..", "runs", "Lshape",
+                     "Grad13Riemann2D_nst136000_Kn0p001_tAll.dat")
 
 # --- load the full result ---------------------------------------------------
 sd = load_solution(datafile)
@@ -46,11 +46,11 @@ println("variables       : ", sd.varnames)
 println("suggested (nx,ny): ", suggest_resolution(sd))
 
 # --- make a plot ------------------------------------------------------------
-fig = plot_field(sd, "rho", 0.05;
+fig = plot_field(sd, "qx", 0.5;
                  kind     = :contourf,
                  levels   = 40,
                  colormap = :deep,
-                 outline  = false)          # add  mesh = (color=(:black,0.2), linewidth=0.25)  to overlay the FV grid
+                 outline  = false )          # add  mesh = (color=(:black,0.2), linewidth=0.25)  to overlay the FV grid
 
 display(fig)                               # shows inline in the VS Code plot pane
 # save(joinpath(@__DIR__, "rho.pdf"), fig) # uncomment to export
