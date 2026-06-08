@@ -26,7 +26,7 @@ includet(joinpath(@__DIR__, "plot_field.jl"))
 
 # --- choose the result file -------------------------------------------------
 # Two reduced-output runs are provided (t = 0, 0.05, 0.1). Switch Kn here.
-Kn       = "0p001"     # "0p001" or "0p005"
+Kn       = "0p005"     # "0p001" or "0p005"
 datafile = joinpath(@__DIR__, "..", "runs", "ffs-momentum",
                     "Grad13ForwardFacingStep_nst302400_Kn$(Kn)_tAll.dat")
 
@@ -130,7 +130,7 @@ function plot_ffs(sd, var, t; label=nothing, kind=:contourf, levels=40,
         var isa AbstractString ? var : sd.varnames[variable_index(sd, var)]
     end
     Colorbar(fig[1, 2], plt; width = 12,
-             ticklabelsize = 9, labelsize = 11)
+             ticklabelsize = 14, labelsize = 14)
     rowsize!(fig.layout, 1, Aspect(1, 1/aspect))
     colgap!(fig.layout, 8)
 
@@ -138,16 +138,16 @@ function plot_ffs(sd, var, t; label=nothing, kind=:contourf, levels=40,
     # the bottom-right corner. The box is sized in data units; the text is
     # anchored to the same corner so it stays inside.
     knstr = Kn === nothing ? "" : ",  Kn = $(Kn)"
-    ttl   = "G13 Moment Equations, $(vname),  t = $(round(t; digits=4))$(knstr)"
+    ttl   = "G13 Moment Eqns, $(vname),  t = $(round(t; digits=4))$(knstr)"
     pad   = 0.012 * (xmax - xmin)
-    bw    = 0.7  * (sx1 - sx0)     # box width  (fraction of step width)
+    bw    = 0.95  * (sx1 - sx0)     # box width  (fraction of step width)
     bh    = 0.40  * (sy1 - sy0)     # box height (fraction of step height)
     bx1   = sx1 - pad;  bx0 = bx1 - bw
     by0   = sy0 + pad;  by1 = by0 + bh
     poly!(ax, Point2f[(bx0, by0), (bx1, by0), (bx1, by1), (bx0, by1)];
           color = :white, strokecolor = :black, strokewidth = 0.8)
     text!(ax, 0.5*(bx0+bx1), 0.5*(by0+by1); text = ttl,
-          align = (:center, :center), fontsize = 14, color = :black,
+          align = (:center, :center), fontsize = 22, color = :black,
           space = :data)
 
     return fig, ax, (sx0, sx1, sy0, sy1)
