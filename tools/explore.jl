@@ -25,7 +25,7 @@
 
 import Pkg
 Pkg.activate(@__DIR__)            # use the tools/ environment (Revise, CairoMakie)
-# Pkg.instantiate()               # uncomment on first run if deps are missing
+Pkg.instantiate()               # uncomment on first run if deps are missing
 
 using Revise                      # live-tracks the included source files
 using CairoMakie                  # plotting backend (loads the FV-mesh helpers too)
@@ -35,8 +35,8 @@ includet(joinpath(@__DIR__, "plot_field.jl"))
 
 # --- choose the result file -------------------------------------------------
 #datafile = joinpath(@__DIR__, "..", "reference", "square4.ref.dat")
-datafile = joinpath(@__DIR__, "..", "runs", "Lshape",
-                     "Grad13Riemann2D_nst136000_Kn0p001_tAll.dat")
+datafile = joinpath(@__DIR__, "..", "runs", "ffs-momentum",
+                     "Grad13ForwardFacingStep_nst33600_Kn0p005_tAll.dat")
 
 # --- load the full result ---------------------------------------------------
 sd = load_solution(datafile)
@@ -46,13 +46,13 @@ println("variables       : ", sd.varnames)
 println("suggested (nx,ny): ", suggest_resolution(sd))
 
 # --- make a plot ------------------------------------------------------------
-fig = plot_field(sd, "qx", 0.5;
-                 kind     = :contourf,
-                 levels   = 40,
-                 colormap = :deep,
-                 outline  = false )          # add  mesh = (color=(:black,0.2), linewidth=0.25)  to overlay the FV grid
+# fig = plot_field(sd, "qx", 1.0;
+#                  kind     = :contourf,
+#                  levels   = 40,
+#                  colormap = :deep,
+#                  outline  = false )          # add  mesh = (color=(:black,0.2), linewidth=0.25)  to overlay the FV grid
 
-display(fig)                               # shows inline in the VS Code plot pane
+# display(fig)                               # shows inline in the VS Code plot pane
 # save(joinpath(@__DIR__, "rho.pdf"), fig) # uncomment to export
 
 # ----------------------------------------------------------------------------
@@ -71,7 +71,14 @@ display(fig)                               # shows inline in the VS Code plot pa
 #
 #   # ARBITRARY function of the variables (NamedTuple of all vars per point).
 #   # A `label` is required for the colourbar/title.
-#   plot_field(sd, nt -> sqrt(nt.vx^2 + nt.vy^2), 0.2; label="|u|")     # speed
+vonMises = nt -> sqrt(1.5*((nt.Pxx - nt.p)^2 +
+                           (nt.Pyy - nt.p)^2 +
+                           (2*nt.p - nt.Pxx - nt.Pyy)^2 +
+                           2*nt.Pxy^2))
+
+fig = plot_field(sd, vonMises, 1.0; label="σ_vM")
+# fig = plot_field(sd, nt -> sqrt(nt.vx^2 + nt.vy^2), 1.0; label="|u|",progress=true);     # speed
+display(fig)
 #   plot_field(sd, nt -> nt.p / nt.rho,           0.2; label="p/rho")
 #   plot_field(sd, nt -> nt.Pxx + nt.Pyy,         0.2; label="tr P")
 #   point_values(sd, 0.3, -0.2, 0.15)        # NamedTuple of all vars at a point
