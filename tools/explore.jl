@@ -69,6 +69,13 @@ display(fig)                               # shows inline in the VS Code plot pa
 #   # another field / time / kind:
 #   fig2 = plot_field(sd, "T", 0.1; kind=:heatmap); display(fig2)
 #
+#   # ARBITRARY function of the variables (NamedTuple of all vars per point).
+#   # A `label` is required for the colourbar/title.
+#   plot_field(sd, nt -> sqrt(nt.vx^2 + nt.vy^2), 0.2; label="|u|")     # speed
+#   plot_field(sd, nt -> nt.p / nt.rho,           0.2; label="p/rho")
+#   plot_field(sd, nt -> nt.Pxx + nt.Pyy,         0.2; label="tr P")
+#   point_values(sd, 0.3, -0.2, 0.15)        # NamedTuple of all vars at a point
+#
 #   # standalone FV mesh:
 # figm = plot_mesh(sd, color=(:red,0.9)); display(figm)
 # ----------------------------------------------------------------------------

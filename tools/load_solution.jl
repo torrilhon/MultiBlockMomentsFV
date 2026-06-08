@@ -58,7 +58,7 @@
 
 module LoadSolution
 
-export SolutionData, load_solution, value, variable_index,
+export SolutionData, load_solution, value, point_values, variable_index,
        block_bounds, gridsize, find_block, domain_extent
 
 # ----------------------------------------------------------------------------
@@ -95,6 +95,7 @@ both with 1-based indices (block position `ib`, not the file's block number).
 struct SolutionData
     title::String
     varnames::Vector{String}
+    varsyms::Tuple{Vararg{Symbol}}   # varnames as Symbols, for NamedTuple keys
     times::Vector{Float64}
     strandids::Vector{Int}
     blockids::Vector{Int}
@@ -336,7 +337,8 @@ function load_solution(path::AbstractString)
         bbox[k, 4] = yc[k][end-1] + 0.5dy
     end
 
-    return SolutionData(title, vnames, times_vec, strand_order, blockids,
+    varsyms = Tuple(Symbol(v) for v in vnames)
+    return SolutionData(title, vnames, varsyms, times_vec, strand_order, blockids,
                         nt, nblk, nvar, nx, ny, nxg, nyg, xc, yc, bbox, blocks)
 end
 
@@ -462,6 +464,32 @@ function value(sd::SolutionData, x::Real, y::Real, t::Real, variable; strict::Bo
     wt == 0.0 && return flo
     fhi = _interp_space(sd, it+1, k, x, y, v)
     return (1-wt)*flo + wt*fhi
+end
+
+"""
+    point_values(sd, x, y, t; strict=false) -> NamedTuple
+
+Dense output of ALL variables at `(x, y, t)`, returned as a NamedTuple keyed by
+the variable names (e.g. `nt.rho`, `nt.vx`, `nt.Pxy`). The block and time
+interval are located once and every column is interpolated the same way as
+`value`. Outside the domain (`strict=true`) all entries are `NaN`.
+
+This is the basis for plotting an arbitrary FUNCTION of the variables: pass the
+returned NamedTuple to your expression, e.g.
+`f = nt -> sqrt(nt.vx^2 + nt.vy^2)`.
+"""
+function point_values(sd::SolutionData, x::Real, y::Real, t::Real; strict::Bool=false)
+    syms = sd.varsyms
+    k = _find_block(sd, x, y; strict=strict)
+    if k == 0
+        return NamedTuple{syms}(ntuple(_ -> NaN, length(syms)))
+    end
+    (it, wt) = _locate(sd.times, t)
+    vals = ntuple(length(syms)) do v
+        flo = _interp_space(sd, it, k, x, y, v)
+        wt == 0.0 ? flo : (1-wt)*flo + wt*_interp_space(sd, it+1, k, x, y, v)
+    end
+    return NamedTuple{syms}(vals)
 end
 
 end # module

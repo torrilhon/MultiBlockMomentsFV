@@ -29,19 +29,28 @@ using .LoadSolution
 # Backend-agnostic sampler
 # ----------------------------------------------------------------------------
 """
-    sample_field(sd, variable, t; nx=400, ny=nothing, strict=true)
+    sample_field(sd, quantity, t; nx=400, ny=nothing, strict=true)
         -> (xs, ys, Z)
 
-Sample the dense output of `variable` at time `t` onto a uniform grid covering
-the whole domain. Returns the grid coordinate vectors `xs` (length nx), `ys`
-(length ny) and `Z::Matrix` of size `(nx, ny)` with `Z[i,j] = value(xs[i],ys[j],t)`.
-Domain gaps are `NaN` when `strict=true`.
+Sample `quantity` at time `t` onto a uniform grid covering the whole domain.
+Returns the grid coordinate vectors `xs` (length nx), `ys` (length ny) and
+`Z::Matrix` of size `(nx, ny)`. Domain gaps are `NaN` when `strict=true`.
+
+`quantity` is flexible:
+- a variable NAME (`"rho"`) or column index  -> that field is sampled directly;
+- a FUNCTION of the variables, called per grid point with a NamedTuple of ALL
+  variables at that point, so you can plot any derived quantity by name, e.g.
+      sample_field(sd, nt -> sqrt(nt.vx^2 + nt.vy^2), t)     # speed |u|
+      sample_field(sd, nt -> nt.p / nt.rho,           t)     # p/rho
+      sample_field(sd, nt -> nt.Pxx + nt.Pyy,         t)     # trace of stress
+  Outside the domain the NamedTuple is all-`NaN`, so a well-behaved `f`
+  propagates `NaN` and the gap stays masked.
 
 `nx` defaults to 400; `ny` is chosen to preserve the domain aspect ratio if not
 given. For seam-free, feature-preserving output choose a resolution at least as
 fine as the finest block (see `suggest_resolution`).
 """
-function sample_field(sd::SolutionData, variable, t::Real;
+function sample_field(sd::SolutionData, quantity, t::Real;
                       nx::Int=400, ny::Union{Int,Nothing}=nothing,
                       strict::Bool=true)
     xmin, xmax, ymin, ymax = domain_extent(sd)
@@ -51,10 +60,17 @@ function sample_field(sd::SolutionData, variable, t::Real;
     end
     xs = range(xmin, xmax; length=nx)
     ys = range(ymin, ymax; length=ny)
-    v  = variable_index(sd, variable)
     Z  = Matrix{Float64}(undef, nx, ny)
-    @inbounds for j in 1:ny, i in 1:nx
-        Z[i, j] = value(sd, xs[i], ys[j], t, v; strict=strict)
+    if quantity isa Function
+        @inbounds for j in 1:ny, i in 1:nx
+            nt = point_values(sd, xs[i], ys[j], t; strict=strict)
+            Z[i, j] = Float64(quantity(nt))
+        end
+    else
+        v = variable_index(sd, quantity)
+        @inbounds for j in 1:ny, i in 1:nx
+            Z[i, j] = value(sd, xs[i], ys[j], t, v; strict=strict)
+        end
     end
     return collect(xs), collect(ys), Z
 end
@@ -125,14 +141,22 @@ end
 # CairoMakie plotting
 # ----------------------------------------------------------------------------
 """
-    plot_field(sd, variable, t; kind=:heatmap, nx=400, ny=nothing,
+    plot_field(sd, quantity, t; label=nothing, kind=:heatmap, nx=400, ny=nothing,
                levels=20, colormap=:viridis, outline=false, strict=true,
                colorrange=nothing, title=nothing,
                gap_color=:transparent, title_box=false) -> Figure
 
-Plot `variable` over the whole domain at time `t` on a single consistent grid.
+Plot `quantity` over the whole domain at time `t` on a single consistent grid.
+
+`quantity` is either a variable NAME/index (e.g. `"rho"`) or a FUNCTION of the
+variables evaluated per grid point with a NamedTuple of all variables, e.g.
+    plot_field(sd, nt -> sqrt(nt.vx^2 + nt.vy^2), t; label="|u|")
+    plot_field(sd, nt -> nt.p / nt.rho,           t; label="p/rho")
+When `quantity` is a function you MUST pass `label` (used for the colourbar and
+the default title); for a plain variable the name is used automatically.
 
 Keyword arguments
+- `label`      : colourbar / title label; REQUIRED when `quantity` is a function
 - `kind`       : `:heatmap` (pixel-smooth field) or `:contourf` (filled contours)
 - `nx`,`ny`    : sampling resolution (ny auto from aspect if omitted)
 - `levels`     : number of filled-contour levels (only for `:contourf`)
@@ -158,7 +182,8 @@ exactly as tall as the field -- not the full figure height.
 Requires `using CairoMakie` (or GLMakie) to be loaded by the caller. Returns the
 Makie `Figure`; save with `save("name.pdf", fig)`.
 """
-function plot_field(sd::SolutionData, variable, t::Real;
+function plot_field(sd::SolutionData, quantity, t::Real;
+                    label=nothing,
                     kind::Symbol=:heatmap,
                     nx::Int=400, ny::Union{Int,Nothing}=nothing,
                     levels::Int=40, colormap=:deep,
@@ -167,9 +192,17 @@ function plot_field(sd::SolutionData, variable, t::Real;
                     gap_color=:transparent, title_box::Bool=false)
     Makie = _require_makie()
 
-    xs, ys, Z = sample_field(sd, variable, t; nx=nx, ny=ny, strict=strict)
+    xs, ys, Z = sample_field(sd, quantity, t; nx=nx, ny=ny, strict=strict)
 
-    vname = variable isa AbstractString ? variable : sd.varnames[variable_index(sd,variable)]
+    # Resolve the label: a function needs an explicit `label`; a variable
+    # name/index defaults to its name.
+    vname = if label !== nothing
+        String(label)
+    elseif quantity isa Function
+        error("plot_field: `quantity` is a function -- pass `label=...` for the colourbar/title")
+    else
+        quantity isa AbstractString ? quantity : sd.varnames[variable_index(sd, quantity)]
+    end
     ttl   = title === nothing ? "$(vname) at t = $(round(t; digits=4))" : title
 
     if colorrange === nothing
