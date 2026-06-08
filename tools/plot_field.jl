@@ -29,7 +29,7 @@ using .LoadSolution
 # Backend-agnostic sampler
 # ----------------------------------------------------------------------------
 """
-    sample_field(sd, quantity, t; nx=400, ny=nothing, strict=true)
+    sample_field(sd, quantity, t; nx=400, ny=nothing, strict=true, progress=:auto)
         -> (xs, ys, Z)
 
 Sample `quantity` at time `t` onto a uniform grid covering the whole domain.
@@ -49,10 +49,14 @@ Returns the grid coordinate vectors `xs` (length nx), `ys` (length ny) and
 `nx` defaults to 400; `ny` is chosen to preserve the domain aspect ratio if not
 given. For seam-free, feature-preserving output choose a resolution at least as
 fine as the finest block (see `suggest_resolution`).
+
+`progress` controls a lightweight stderr progress bar (with elapsed/ETA) for
+fine grids: `:auto` (default) shows it only for large grids (>= 200k points) on
+an interactive terminal; `true`/`false` force it on/off.
 """
 function sample_field(sd::SolutionData, quantity, t::Real;
                       nx::Int=400, ny::Union{Int,Nothing}=nothing,
-                      strict::Bool=true)
+                      strict::Bool=true, progress=:auto)
     xmin, xmax, ymin, ymax = domain_extent(sd)
     if ny === nothing
         aspect = (ymax - ymin) / (xmax - xmin)
@@ -61,18 +65,67 @@ function sample_field(sd::SolutionData, quantity, t::Real;
     xs = range(xmin, xmax; length=nx)
     ys = range(ymin, ymax; length=ny)
     Z  = Matrix{Float64}(undef, nx, ny)
+
+    # Progress bar (over columns). `:auto` shows it only for large grids on an
+    # interactive terminal; pass `progress=true`/`false` to force.
+    show_bar = progress === :auto ? (nx*ny >= 200_000 && _isinteractive_err()) :
+                                    progress === true
+    pb = show_bar ? _ProgressBar(ny, "sampling $(nx)x$(ny)") : nothing
+
     if quantity isa Function
-        @inbounds for j in 1:ny, i in 1:nx
-            nt = point_values(sd, xs[i], ys[j], t; strict=strict)
-            Z[i, j] = Float64(quantity(nt))
+        @inbounds for j in 1:ny
+            for i in 1:nx
+                nt = point_values(sd, xs[i], ys[j], t; strict=strict)
+                Z[i, j] = Float64(quantity(nt))
+            end
+            pb === nothing || _tick!(pb, j)
         end
     else
         v = variable_index(sd, quantity)
-        @inbounds for j in 1:ny, i in 1:nx
-            Z[i, j] = value(sd, xs[i], ys[j], t, v; strict=strict)
+        @inbounds for j in 1:ny
+            for i in 1:nx
+                Z[i, j] = value(sd, xs[i], ys[j], t, v; strict=strict)
+            end
+            pb === nothing || _tick!(pb, j)
         end
     end
+    pb === nothing || _finish!(pb)
     return collect(xs), collect(ys), Z
+end
+
+# --- minimal zero-dependency progress bar (prints to stderr with \r) ---------
+_isinteractive_err() = (try; (stderr isa Base.TTY); catch; false; end)
+
+mutable struct _ProgressBar
+    total::Int
+    label::String
+    t0::Float64
+    lastprint::Float64
+end
+_ProgressBar(total::Int, label::String) =
+    _ProgressBar(total, label, time(), 0.0)
+
+function _tick!(pb::_ProgressBar, done::Int)
+    now = time()
+    # throttle redraws to ~20 Hz so the bar itself costs nothing
+    (done < pb.total && now - pb.lastprint < 0.05) && return
+    pb.lastprint = now
+    frac = done / pb.total
+    width = 30
+    nfill = round(Int, frac*width)
+    bar = ""*repeat('=', nfill)*repeat(' ', width-nfill)
+    el  = now - pb.t0
+    eta = frac > 0 ? el*(1-frac)/frac : 0.0
+    print(stderr, "\r$(pb.label) [$bar] $(round(Int,100frac))%  ",
+          "elapsed $(round(el;digits=1))s  eta $(round(eta;digits=1))s   ")
+    flush(stderr)
+end
+
+function _finish!(pb::_ProgressBar)
+    el = time() - pb.t0
+    print(stderr, "\r$(pb.label) [", repeat('=',30), "] 100%  ",
+          "done in $(round(el;digits=1))s", repeat(' ', 18), "\n")
+    flush(stderr)
 end
 
 """
@@ -189,10 +242,10 @@ function plot_field(sd::SolutionData, quantity, t::Real;
                     levels::Int=40, colormap=:deep,
                     outline::Bool=false, mesh=false, strict::Bool=true,
                     colorrange=nothing, title=nothing,
-                    gap_color=:transparent, title_box::Bool=false)
+                    gap_color=:transparent, title_box::Bool=false, progress=:auto)
     Makie = _require_makie()
 
-    xs, ys, Z = sample_field(sd, quantity, t; nx=nx, ny=ny, strict=strict)
+    xs, ys, Z = sample_field(sd, quantity, t; nx=nx, ny=ny, strict=strict, progress=progress)
 
     # Resolve the label: a function needs an explicit `label`; a variable
     # name/index defaults to its name.

@@ -76,6 +76,9 @@ display(fig)                               # shows inline in the VS Code plot pa
 #   plot_field(sd, nt -> nt.Pxx + nt.Pyy,         0.2; label="tr P")
 #   point_values(sd, 0.3, -0.2, 0.15)        # NamedTuple of all vars at a point
 #
+#   # progress bar on fine grids (auto for large grids; force with progress=):
+#   plot_field(sd, "rho", 0.2; nx=1200, progress=true)
+#
 #   # standalone FV mesh:
 # figm = plot_mesh(sd, color=(:red,0.9)); display(figm)
 # ----------------------------------------------------------------------------
