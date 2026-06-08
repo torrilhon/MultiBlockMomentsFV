@@ -27,8 +27,8 @@ includet(joinpath(@__DIR__, "plot_field.jl"))
 # --- choose the result file -------------------------------------------------
 # Two reduced-output runs are provided (t = 0, 0.05, 0.1). Switch Kn here.
 Kn       = "0p001"     # "0p001" or "0p005"
-datafile = joinpath(@__DIR__, "..", "runs", "ffs",
-                    "Grad13ForwardFacingStep_nst7000_Kn$(Kn)_tAll.dat")
+datafile = joinpath(@__DIR__, "..", "runs", "ffs-momentum",
+                    "Grad13ForwardFacingStep_nst302400_Kn$(Kn)_tAll.dat")
 
 # --- load the full result ---------------------------------------------------
 sd = load_solution(datafile)
@@ -53,12 +53,19 @@ vonMises = nt -> sqrt(1.5 * ((nt.Pxx - nt.p)^2 +
                              2*nt.Pxy^2))
 
 # --- plot settings ----------------------------------------------------------
+# var      = vonMises      # a variable name, OR a function above (then set `label`)
+# label    = "von-Mises-stress"    # required when `var` is a function (colourbar/title text)
+# t        = 1.0
+# kind     = :contourf
+# levels   = 40
+# colormap = :deep
+
 var      = "rho"      # a variable name, OR a function above (then set `label`)
-label    = nothing    # required when `var` is a function (colourbar/title text)
+label    = "density"    # required when `var` is a function (colourbar/title text)
 t        = 1.0
 kind     = :contourf
 levels   = 40
-colormap = :viridis #:deep
+colormap = :viridis
 
 # ----------------------------------------------------------------------------
 # plot_ffs: contour plot specialised for the forward-facing step.
@@ -81,10 +88,10 @@ function plot_ffs(sd, var, t; label=nothing, kind=:contourf, levels=40,
     # block 1 is the lower strip; its top edge is the step height and its right
     # edge is the step's left edge. Derived from geometry, not hard-coded.
     b1  = block_bounds(sd, 1)
-    sx0 = b1.xmax            # step starts where the lower strip ends
-    sx1 = xmax
-    sy0 = ymin
-    sy1 = b1.ymax            # step top = lower-strip top
+    sx0 = 1.0 #b1.xmax            # step starts where the lower strip ends
+    sx1 = 3.0 #xmax
+    sy0 = 0.0 #ymin
+    sy1 = 0.3333 #b1.ymax            # step top = lower-strip top
 
     aspect = (xmax - xmin) / (ymax - ymin)
     axh    = 300             # axis height in px; width follows the data aspect
@@ -133,7 +140,7 @@ function plot_ffs(sd, var, t; label=nothing, kind=:contourf, levels=40,
     knstr = Kn === nothing ? "" : ",  Kn = $(Kn)"
     ttl   = "G13 Moment Equations, $(vname),  t = $(round(t; digits=4))$(knstr)"
     pad   = 0.012 * (xmax - xmin)
-    bw    = 0.62  * (sx1 - sx0)     # box width  (fraction of step width)
+    bw    = 0.7  * (sx1 - sx0)     # box width  (fraction of step width)
     bh    = 0.40  * (sy1 - sy0)     # box height (fraction of step height)
     bx1   = sx1 - pad;  bx0 = bx1 - bw
     by0   = sy0 + pad;  by1 = by0 + bh
@@ -149,7 +156,7 @@ end
 fig, ax, step = plot_ffs(sd, var, t; label=label, kind=kind, levels=levels,
                          colormap=colormap, Kn=replace(Kn, "p" => "."))
 display(fig)
-# save(joinpath(@__DIR__, "ffs_$(var)_Kn$(Kn).png"), fig)
+save(joinpath(@__DIR__, "ffs_$(var)_Kn$(Kn).png"), fig)
 
 # ----------------------------------------------------------------------------
 # Probe interactively, e.g.:
