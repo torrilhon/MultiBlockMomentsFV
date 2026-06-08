@@ -37,8 +37,24 @@ println("\nstored times    : ", sd.times)
 println("variables       : ", sd.varnames)
 println("suggested (nx,ny): ", suggest_resolution(sd))
 
+# --- derived quantities (functions of the variables) ------------------------
+# Each is called per grid point with a NamedTuple of ALL variables (nt.rho,
+# nt.vx, nt.p, nt.Pxx, ...). Pass any of these as `var` below together with a
+# matching `label`.
+speed    = nt -> sqrt(nt.vx^2 + nt.vy^2)                  # |u|
+mach     = nt -> sqrt(nt.vx^2 + nt.vy^2) / sqrt(nt.T)     # Mach (a = sqrt(T))
+
+# von Mises stress from the pressure tensor. The pressure tensor is a genuine
+# 3D object: Pzz = 3p - Pxx - Pyy (from p = (Pxx+Pyy+Pzz)/3), and Pxz=Pyz=0.
+# The deviator is sigma = P - p*delta; sigma_vM = sqrt(3/2 * sigma:sigma):
+vonMises = nt -> sqrt(1.5 * ((nt.Pxx - nt.p)^2 +
+                             (nt.Pyy - nt.p)^2 +
+                             (2*nt.p - nt.Pxx - nt.Pyy)^2 +   # = (Pzz - p)^2
+                             2*nt.Pxy^2))
+
 # --- plot settings ----------------------------------------------------------
-var      = "rho"
+var      = "rho"      # a variable name, OR a function above (then set `label`)
+label    = nothing    # required when `var` is a function (colourbar/title text)
 t        = 1.0
 kind     = :contourf
 levels   = 40
@@ -53,10 +69,10 @@ colormap = :viridis #:deep
 # lower strip (block 1) to the domain's right edge, and y from the domain
 # bottom up to the top of the lower strip.
 # ----------------------------------------------------------------------------
-function plot_ffs(sd, var, t; kind=:contourf, levels=40, colormap=:deep,
-                  nx=600, Kn=nothing)
+function plot_ffs(sd, var, t; label=nothing, kind=:contourf, levels=40,
+                  colormap=:deep, nx=600, Kn=nothing, progress=:auto)
     xmin, xmax, ymin, ymax = domain_extent(sd)
-    xs, ys, Z = sample_field(sd, var, t; nx=nx, strict=true)
+    xs, ys, Z = sample_field(sd, var, t; nx=nx, strict=true, progress=progress)
 
     finite     = filter(isfinite, Z)
     colorrange = isempty(finite) ? (0.0, 1.0) : (minimum(finite), maximum(finite))
@@ -97,7 +113,15 @@ function plot_ffs(sd, var, t; kind=:contourf, levels=40, colormap=:deep,
     # Compact colourbar: a slim legend whose height is pinned to the axis. With
     # DataAspect the axis is short and wide; Aspect on the row makes the layout
     # shrink the colourbar cell to the axis height instead of stretching it.
-    vname = var isa AbstractString ? var : sd.varnames[variable_index(sd, var)]
+    # Label: a function needs an explicit `label`; a variable name defaults to
+    # its own name.
+    vname = if label !== nothing
+        String(label)
+    elseif var isa Function
+        error("plot_ffs: `var` is a function -- pass `label=...` for the colourbar/title")
+    else
+        var isa AbstractString ? var : sd.varnames[variable_index(sd, var)]
+    end
     Colorbar(fig[1, 2], plt; width = 12,
              ticklabelsize = 9, labelsize = 11)
     rowsize!(fig.layout, 1, Aspect(1, 1/aspect))
@@ -122,7 +146,7 @@ function plot_ffs(sd, var, t; kind=:contourf, levels=40, colormap=:deep,
     return fig, ax, (sx0, sx1, sy0, sy1)
 end
 
-fig, ax, step = plot_ffs(sd, var, t; kind=kind, levels=levels,
+fig, ax, step = plot_ffs(sd, var, t; label=label, kind=kind, levels=levels,
                          colormap=colormap, Kn=replace(Kn, "p" => "."))
 display(fig)
 # save(joinpath(@__DIR__, "ffs_$(var)_Kn$(Kn).png"), fig)
@@ -131,4 +155,13 @@ display(fig)
 # Probe interactively, e.g.:
 #   value(sd, 1.5, 0.5, 0.1, "T")
 #   find_block(sd, 0.3, 0.1)
+#   point_values(sd, 1.5, 0.5, 0.1)        # NamedTuple of all vars at a point
+#
+# Plot a derived quantity (function of the variables); `label` is required:
+#   fig, _ = plot_ffs(sd, vonMises, t; label="σ_vM"); display(fig)
+#   fig, _ = plot_ffs(sd, speed,    t; label="|u|");  display(fig)
+#   fig, _ = plot_ffs(sd, mach,     t; label="Ma");   display(fig)
+#
+# Progress bar for fine grids (auto for large grids; force with progress=):
+#   plot_ffs(sd, vonMises, t; label="σ_vM", nx=1500, progress=true)
 # ----------------------------------------------------------------------------
