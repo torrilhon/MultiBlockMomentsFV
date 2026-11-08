@@ -219,14 +219,17 @@ void Output( DB_Block *B, int bMax, int n, double t, int Add )
         dst_idx = (j - B[nb].range.lfb.j)*lineOut + (i - B[nb].range.lfb.i);
         Primitive( B[nb].layer[L_DATA][dst_idx].U, Prim );
 
+        // Prim = {rho, vx, vy, theta, Txx, Txy, Tyy, qx, qy} (see Primitive in
+        // Flux.c): theta = p/rho is the temperature and T_ij = P_ij/rho the
+        // specific pressure tensor, so the output p and P_ij carry the factor rho.
         vals[0] = Prim[0];          // rho
         vals[1] = Prim[1];          // vx
         vals[2] = Prim[2];          // vy
-        vals[3] = Prim[3]/Prim[0];  // T
-        vals[4] = Prim[3];          // p
-        vals[5] = Prim[4];          // Pxx
-        vals[6] = Prim[5];          // Pxy
-        vals[7] = Prim[6];          // Pyy
+        vals[3] = Prim[3];          // T   = theta
+        vals[4] = Prim[0]*Prim[3];  // p   = rho*theta
+        vals[5] = Prim[0]*Prim[4];  // Pxx = rho*Txx
+        vals[6] = Prim[0]*Prim[5];  // Pxy = rho*Txy
+        vals[7] = Prim[0]*Prim[6];  // Pyy = rho*Tyy
         vals[8] = Prim[7];          // qx
         vals[9] = Prim[8];          // qy
 
